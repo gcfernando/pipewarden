@@ -118,6 +118,11 @@ def main(argv: list[str] | None = None) -> int:
         # argparse calls sys.exit(2) on bad args; pass that through.
         return int(e.code) if e.code is not None else EXIT_USAGE
 
+    # Ensure UTF-8 output on Windows where the default encoding may be cp1252.
+    for _stream in (sys.stdout, sys.stderr):
+        if hasattr(_stream, "reconfigure"):
+            _stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+
     root: Path = args.root.resolve()
     if not root.is_dir():
         print(f"error: --root is not a directory: {root}", file=sys.stderr)
@@ -140,7 +145,7 @@ def main(argv: list[str] | None = None) -> int:
     started = time.monotonic()
 
     # SIGINT → KeyboardInterrupt so we can still print a summary
-    def _handle_sigint(_sig, _frame):  # type: ignore[no-untyped-def]
+    def _handle_sigint(_sig, _frame):  # type: ignore[no-untyped-def]  # pragma: no cover
         raise KeyboardInterrupt
     signal.signal(signal.SIGINT, _handle_sigint)
 
@@ -187,7 +192,7 @@ def main(argv: list[str] | None = None) -> int:
 
     except _FailFast:
         printer.warn("--fail-fast triggered; stopping.")
-    except KeyboardInterrupt:
+    except KeyboardInterrupt:  # pragma: no cover
         printer.warn("interrupted")
         report.duration_s = time.monotonic() - started
         _emit_outputs(report, cfg, args, printer)

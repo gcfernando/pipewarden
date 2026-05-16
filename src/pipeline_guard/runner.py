@@ -8,13 +8,17 @@ from __future__ import annotations
 
 import contextlib
 import os
+import select
 import shutil
 import subprocess
+import sys
 import time
 from collections.abc import Sequence
 from pathlib import Path
 
 from .types import Status, StepResult
+
+_POSIX = sys.platform != "win32"
 
 # We tail this many lines per step into the report.
 TAIL_LINES = 60
@@ -103,7 +107,14 @@ def run_cmd(
 
                 # Drain whatever output is currently available. After the
                 # process exits the pipe closes and readline() returns "".
+                # On POSIX use a non-blocking select check first so we never
+                # block here when the process produces no output — that would
+                # prevent the deadline at the top of the loop from being reached.
                 while True:
+                    if _POSIX:
+                        readable, _, _ = select.select([proc.stdout], [], [], 0.0)
+                        if not readable:
+                            break
                     line = proc.stdout.readline()
                     if not line:
                         break
@@ -120,7 +131,7 @@ def run_cmd(
             # Always close the pipe to avoid resource leaks (ResourceWarning).
             with contextlib.suppress(Exception):
                 proc.stdout.close()
-    except KeyboardInterrupt:
+    except KeyboardInterrupt:  # pragma: no cover
         proc.kill()
         with contextlib.suppress(subprocess.TimeoutExpired):
             proc.wait(timeout=5)

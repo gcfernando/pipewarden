@@ -16,6 +16,7 @@ import pytest
 from pipeline_guard.config import PipelineConfig
 from pipeline_guard.detect import Detection
 from pipeline_guard.stages import (
+    run_docker,
     run_dotnet,
     run_go,
     run_node,
@@ -256,6 +257,36 @@ def test_rust_dep_failure_stops(
     names = [r.name for r in results]
     assert "rust:build" not in names
     assert "rust:test" not in names
+
+
+# ---------------------------------------------------------------------------
+# Docker stage
+# ---------------------------------------------------------------------------
+
+def test_docker_build_without_hadolint(
+    tmp_project: Path, cfg: PipelineConfig, recorder: CallRecorder
+) -> None:
+    with patch("pipeline_guard.stages.shutil.which", return_value=None):
+        results: list[StepResult] = []
+        with _patch_stage("run_cmd", recorder):
+            run_docker(tmp_project, Detection(docker=True), cfg, results)
+    names = [r.name for r in results]
+    assert names == ["docker:build"]
+    assert "docker:lint(hadolint)" not in names
+
+
+def test_docker_build_with_hadolint(
+    tmp_project: Path, cfg: PipelineConfig, recorder: CallRecorder
+) -> None:
+    with patch("pipeline_guard.stages.shutil.which",
+               side_effect=lambda x: x if x == "hadolint" else None):
+        results: list[StepResult] = []
+        with _patch_stage("run_cmd", recorder):
+            run_docker(tmp_project, Detection(docker=True), cfg, results)
+    names = [r.name for r in results]
+    assert "docker:lint(hadolint)" in names
+    assert "docker:build" in names
+    assert names.index("docker:lint(hadolint)") < names.index("docker:build")
 
 
 # ---------------------------------------------------------------------------

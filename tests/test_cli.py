@@ -98,7 +98,7 @@ def test_invoked_as_module(tmp_path: Path) -> None:
     # Sanity check the `python -m pipeline_guard` entry point.
     result = subprocess.run(
         [sys.executable, "-m", "pipeline_guard", "--root", str(tmp_path), "--no-color"],
-        capture_output=True, text=True, timeout=30,
+        capture_output=True, text=True, encoding="utf-8", timeout=30,
     )
     assert result.returncode == 0, result.stderr
 
