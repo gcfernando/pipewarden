@@ -11,14 +11,21 @@ from pathlib import Path
 
 from . import __version__
 from .config import (
-    ALL_STAGES, ConfigError, PipelineConfig,
-    apply_env_overrides, find_config_file, load_config,
+    ALL_STAGES,
+    ConfigError,
+    PipelineConfig,
+    apply_env_overrides,
+    find_config_file,
+    load_config,
 )
 from .detect import detect
 from .printer import Printer, print_summary
 from .reporters import (
-    to_github_annotations, to_json, to_junit_xml,
-    to_markdown_summary, to_sarif,
+    to_github_annotations,
+    to_json,
+    to_junit_xml,
+    to_markdown_summary,
+    to_sarif,
 )
 from .secrets import scan_secrets
 from .stages import STAGES
@@ -230,10 +237,6 @@ def _cmd_dry_run(root: Path, cfg: PipelineConfig) -> int:
     print("-" * 30)
     for stage in ("secrets", "python", "node", "dotnet", "go", "rust", "docker", "vulns"):
         det = detected_map.get(stage, False)
-        if stage == "secrets":
-            en = _stage_enabled(stage, cfg) and cfg.secrets.enabled
-        else:
-            en = det and _stage_enabled(stage, cfg)
 
         if not det:
             reason = "not detected"

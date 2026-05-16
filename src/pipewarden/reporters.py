@@ -194,7 +194,7 @@ def to_markdown_summary(report: Report) -> str:
     lines: list[str] = [
         f"## {header_icon} Pipewarden {report.tool_version}",
         "",
-        f"**Root:** `{report.root}`   **Duration:** {report.duration_s:.1f}s",
+        f"**Root:** `{report.root}`  **Duration:** {report.duration_s:.1f}s",
         "",
         "| Stage | Status | Duration | Details |",
         "|-------|--------|----------|---------|",
