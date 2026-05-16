@@ -9,7 +9,7 @@ description = "Detect, install, lint, test, build, scan — locally or in CI. Fr
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
-authors = [{ name = "Pipeline Guard contributors" }]
+authors = [{ name = "Gehan Fernando", email = "f.gehan@gmail.com" }]
 keywords = ["ci", "devops", "secret-scanning", "lint", "test", "build"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
@@ -45,10 +45,10 @@ dev = [
 pipeline-guard = "pipeline_guard.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/example/pipeline-guard"
-Source   = "https://github.com/example/pipeline-guard"
-Issues   = "https://github.com/example/pipeline-guard/issues"
-Changelog = "https://github.com/example/pipeline-guard/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/gcfernando/pipeline-guard"
+Source   = "https://github.com/gcfernando/pipeline-guard"
+Issues   = "https://github.com/gcfernando/pipeline-guard/issues"
+Changelog = "https://github.com/gcfernando/pipeline-guard/blob/main/CHANGELOG.md"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pipeline_guard"]
