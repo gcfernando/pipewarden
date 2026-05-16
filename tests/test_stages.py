@@ -16,6 +16,8 @@ import pytest
 from pipewarden.config import PipelineConfig
 from pipewarden.detect import Detection
 from pipewarden.stages import (
+    _docker_daemon_available,
+    _in_ci,
     run_docker,
     run_dotnet,
     run_go,
@@ -306,3 +308,94 @@ def test_vulns_no_scanners_available(
     assert len(results) == 1
     assert results[0].status == Status.SKIPPED
     assert results[0].name == "vulns"
+
+
+def test_vulns_with_pip_audit(
+    tmp_project: Path, cfg: PipelineConfig, recorder: CallRecorder
+) -> None:
+    with patch("pipewarden.stages.shutil.which",
+               side_effect=lambda x: x if x == "pip-audit" else None):
+        results: list[StepResult] = []
+        with _patch_stage("run_cmd", recorder):
+            run_vulns(tmp_project, Detection(python=True), cfg, results)
+    names = [r.name for r in results]
+    assert "vulns:pip-audit" in names
+
+
+def test_vulns_with_npm_audit(
+    tmp_project: Path, cfg: PipelineConfig, recorder: CallRecorder
+) -> None:
+    with patch("pipewarden.stages.shutil.which",
+               side_effect=lambda x: x if x == "npm" else None):
+        results: list[StepResult] = []
+        with _patch_stage("run_cmd", recorder):
+            run_vulns(tmp_project, Detection(node=True), cfg, results)
+    names = [r.name for r in results]
+    assert "vulns:npm-audit" in names
+
+
+def test_rust_with_clippy(
+    tmp_project: Path, cfg: PipelineConfig, recorder: CallRecorder
+) -> None:
+    with patch("pipewarden.stages.shutil.which", return_value="cargo-clippy"):
+        results: list[StepResult] = []
+        with _patch_stage("run_cmd", recorder):
+            run_rust(tmp_project, Detection(rust=True), cfg, results)
+    names = recorder.names()
+    assert "rust:lint(clippy)" in names
+
+
+# ---------------------------------------------------------------------------
+# _in_ci helper
+# ---------------------------------------------------------------------------
+
+def test_in_ci_false(monkeypatch: pytest.MonkeyPatch) -> None:
+    for var in ("CI", "GITHUB_ACTIONS", "GITLAB_CI", "TF_BUILD"):
+        monkeypatch.delenv(var, raising=False)
+    assert _in_ci() is False
+
+
+def test_in_ci_true_via_ci_var(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CI", "true")
+    assert _in_ci() is True
+
+
+def test_in_ci_true_via_github_actions(monkeypatch: pytest.MonkeyPatch) -> None:
+    for var in ("CI", "GITLAB_CI", "TF_BUILD"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    assert _in_ci() is True
+
+
+# ---------------------------------------------------------------------------
+# Docker daemon availability and WARNED vs FAILED
+# ---------------------------------------------------------------------------
+
+def test_docker_daemon_no_cmd() -> None:
+    with patch("pipewarden.stages.shutil.which", return_value=None):
+        assert _docker_daemon_available() is False
+
+
+def test_docker_unavailable_ci_warns(
+    tmp_project: Path, cfg: PipelineConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("CI", "true")
+    with (patch("pipewarden.stages._docker_daemon_available", return_value=False),
+          patch("pipewarden.stages.shutil.which", return_value=None)):
+        results: list[StepResult] = []
+        run_docker(tmp_project, Detection(docker=True), cfg, results)
+    build_step = next(r for r in results if r.name == "docker:build")
+    assert build_step.status == Status.WARNED
+
+
+def test_docker_unavailable_local_fails(
+    tmp_project: Path, cfg: PipelineConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for var in ("CI", "GITHUB_ACTIONS", "GITLAB_CI", "TF_BUILD"):
+        monkeypatch.delenv(var, raising=False)
+    with (patch("pipewarden.stages._docker_daemon_available", return_value=False),
+          patch("pipewarden.stages.shutil.which", return_value=None)):
+        results: list[StepResult] = []
+        run_docker(tmp_project, Detection(docker=True), cfg, results)
+    build_step = next(r for r in results if r.name == "docker:build")
+    assert build_step.status == Status.FAILED

@@ -5,6 +5,7 @@ import pytest
 from pipewarden.config import (
     ConfigError,
     PipelineConfig,
+    apply_env_overrides,
     find_config_file,
     load_config,
 )
@@ -83,3 +84,106 @@ def test_malformed_toml(tmp_path: Path) -> None:
     p.write_text('this is not [valid')
     with pytest.raises(ConfigError):
         load_config(p)
+
+
+# ---------------------------------------------------------------------------
+# apply_env_overrides
+# ---------------------------------------------------------------------------
+
+def test_apply_env_fail_fast(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PIPEWARDEN_FAIL_FAST", "1")
+    cfg = load_config(None)
+    apply_env_overrides(cfg)
+    assert cfg.fail_fast is True
+
+
+def test_apply_env_fail_fast_truthy_yes(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PIPEWARDEN_FAIL_FAST", "yes")
+    cfg = load_config(None)
+    apply_env_overrides(cfg)
+    assert cfg.fail_fast is True
+
+
+def test_apply_env_skip(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PIPEWARDEN_SKIP", "docker,vulns")
+    cfg = load_config(None)
+    apply_env_overrides(cfg)
+    assert "docker" in cfg.skip
+    assert "vulns" in cfg.skip
+
+
+def test_apply_env_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PIPEWARDEN_ONLY", "python")
+    cfg = load_config(None)
+    apply_env_overrides(cfg)
+    assert cfg.only == ["python"]
+
+
+def test_apply_env_timeout_test_s(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PIPEWARDEN_TIMEOUT_TEST_S", "9999")
+    cfg = load_config(None)
+    apply_env_overrides(cfg)
+    assert cfg.timeouts.test_s == 9999
+
+
+def test_apply_env_no_color(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PIPEWARDEN_NO_COLOR", "1")
+    cfg = load_config(None)
+    apply_env_overrides(cfg)
+    assert cfg.output.color is False
+
+
+def test_apply_env_quiet(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PIPEWARDEN_QUIET", "true")
+    cfg = load_config(None)
+    apply_env_overrides(cfg)
+    assert cfg.output.quiet is True
+
+
+def test_apply_env_retry_attempts(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PIPEWARDEN_RETRY_ATTEMPTS", "3")
+    cfg = load_config(None)
+    apply_env_overrides(cfg)
+    assert cfg.retry.attempts == 3
+
+
+def test_apply_env_retry_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PIPEWARDEN_RETRY_BACKOFF", "5.0")
+    cfg = load_config(None)
+    apply_env_overrides(cfg)
+    assert cfg.retry.backoff_base == 5.0
+
+
+def test_apply_env_bad_timeout_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PIPEWARDEN_TIMEOUT_INSTALL_S", "not-a-number")
+    cfg = load_config(None)
+    with pytest.raises(ConfigError, match="must be an integer"):
+        apply_env_overrides(cfg)
+
+
+def test_apply_env_bad_retry_attempts_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PIPEWARDEN_RETRY_ATTEMPTS", "bad")
+    cfg = load_config(None)
+    with pytest.raises(ConfigError, match="must be an integer"):
+        apply_env_overrides(cfg)
+
+
+def test_apply_env_bad_retry_backoff_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PIPEWARDEN_RETRY_BACKOFF", "bad")
+    cfg = load_config(None)
+    with pytest.raises(ConfigError, match="must be a number"):
+        apply_env_overrides(cfg)
+
+
+def test_retry_invalid_attempts_raises() -> None:
+    cfg = load_config(None)
+    cfg.retry.attempts = 6
+    with pytest.raises(ConfigError, match=r"retry\.attempts"):
+        cfg.validate()
+
+
+def test_retry_invalid_backoff_raises() -> None:
+    cfg = load_config(None)
+    cfg.retry.backoff_base = 0.0
+    with pytest.raises(ConfigError, match=r"retry\.backoff_base"):
+        cfg.validate()

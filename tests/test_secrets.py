@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from pipewarden.config import SecretsConfig
-from pipewarden.secrets import SECRET_PATTERNS, scan_secrets_fallback
+from pipewarden.secrets import SECRET_PATTERNS, _compile_glob, scan_secrets_fallback
 from pipewarden.types import Status
 
 
@@ -84,3 +84,80 @@ def test_string_allowlist(tmp_path: Path) -> None:
     cfg = SecretsConfig(allowlist_strings=["AKIAIOSFODNN7EXAMPLE"])
     r = scan_secrets_fallback(tmp_path, cfg)
     assert r.status == Status.PASSED
+
+
+# ---------------------------------------------------------------------------
+# _compile_glob
+# ---------------------------------------------------------------------------
+
+def test_compile_glob_double_star_slash_matches_nested() -> None:
+    rx = _compile_glob("tests/fixtures/**")
+    assert rx.match("tests/fixtures/sub/file.txt") is not None
+    assert rx.match("tests/fixtures/file.txt") is not None
+    assert rx.match("other/file.txt") is None
+
+
+def test_compile_glob_double_star_prefix_matches_any_dir() -> None:
+    rx = _compile_glob("**/test.py")
+    assert rx.match("a/b/test.py") is not None
+    assert rx.match("test.py") is not None
+    assert rx.match("a/test.txt") is None
+
+
+def test_compile_glob_double_star_alone_matches_any() -> None:
+    rx = _compile_glob("dist/**")
+    assert rx.match("dist/sub/file.js") is not None
+
+
+def test_compile_glob_single_star_no_slash() -> None:
+    rx = _compile_glob("src/*.py")
+    assert rx.match("src/foo.py") is not None
+    assert rx.match("src/sub/foo.py") is None
+
+
+def test_compile_glob_question_mark() -> None:
+    rx = _compile_glob("src/?.py")
+    assert rx.match("src/a.py") is not None
+    assert rx.match("src/ab.py") is None
+
+
+def test_path_allowlist_double_star_matches_subdirs(tmp_path: Path) -> None:
+    sub = tmp_path / "tests" / "fixtures" / "nested"
+    sub.mkdir(parents=True)
+    (sub / "fake.txt").write_text("AKIAIOSFODNN7EXAMPLE")
+    cfg = SecretsConfig(allowlist_paths=["tests/fixtures/**"])
+    r = scan_secrets_fallback(tmp_path, cfg)
+    assert r.status == Status.PASSED
+
+
+# ---------------------------------------------------------------------------
+# New secret patterns
+# ---------------------------------------------------------------------------
+
+def test_gitlab_pat_detected(tmp_path: Path) -> None:
+    (tmp_path / "creds.txt").write_text("token=glpat-" + "a" * 20 + "\n")
+    r = scan_secrets_fallback(tmp_path, SecretsConfig())
+    assert r.status == Status.FAILED
+    assert any(f.rule_id == "gitlab.pat" for f in r.findings)
+
+
+def test_anthropic_key_detected(tmp_path: Path) -> None:
+    (tmp_path / "key.txt").write_text("key=sk-ant-" + "a" * 40 + "\n")
+    r = scan_secrets_fallback(tmp_path, SecretsConfig())
+    assert r.status == Status.FAILED
+    assert any(f.rule_id == "anthropic.api_key" for f in r.findings)
+
+
+def test_sendgrid_key_detected(tmp_path: Path) -> None:
+    key = "SG." + "a" * 22 + "." + "b" * 43
+    (tmp_path / "config.txt").write_text(f"SENDGRID_API_KEY={key}\n")
+    r = scan_secrets_fallback(tmp_path, SecretsConfig())
+    assert r.status == Status.FAILED
+    assert any(f.rule_id == "sendgrid.api_key" for f in r.findings)
+
+
+def test_mongodb_connection_string_detected(tmp_path: Path) -> None:
+    (tmp_path / "db.txt").write_text("mongodb://user:pass@host:27017/db\n")
+    r = scan_secrets_fallback(tmp_path, SecretsConfig())
+    assert r.status == Status.FAILED
+    assert any(f.rule_id == "mongodb.connection_string" for f in r.findings)

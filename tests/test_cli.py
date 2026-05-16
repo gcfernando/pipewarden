@@ -1,11 +1,12 @@
 import json
+import logging
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
-from pipewarden.cli import EXIT_SECRETS, main
+from pipewarden.cli import EXIT_SECRETS, _cmd_validate, main
 
 
 def test_help_runs(capsys: pytest.CaptureFixture[str]) -> None:
@@ -101,6 +102,97 @@ def test_invoked_as_module(tmp_path: Path) -> None:
         capture_output=True, text=True, encoding="utf-8", timeout=30,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_init_creates_config(tmp_path: Path) -> None:
+    rc = main(["--init", "--root", str(tmp_path)])
+    assert rc == 0
+    assert (tmp_path / ".pipewarden.toml").exists()
+
+
+def test_init_fails_if_config_exists(tmp_path: Path,
+                                      capsys: pytest.CaptureFixture[str]) -> None:
+    (tmp_path / ".pipewarden.toml").write_text("[secrets]\n")
+    rc = main(["--init", "--root", str(tmp_path)])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "already exists" in err
+
+
+def test_validate_defaults(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    # No config file → defaults are always valid.
+    rc = main(["--validate", "--root", str(tmp_path)])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "config OK" in out
+
+
+def test_validate_bad_config_directly(tmp_path: Path,
+                                       capsys: pytest.CaptureFixture[str]) -> None:
+    bad = tmp_path / "bad.toml"
+    bad.write_text("bogus_key = 1\n")
+    rc = _cmd_validate(bad)
+    assert rc == 3
+    err = capsys.readouterr().err
+    assert "config error" in err
+
+
+def test_list_stages_empty_project(tmp_path: Path,
+                                    capsys: pytest.CaptureFixture[str]) -> None:
+    rc = main(["--list-stages", "--root", str(tmp_path)])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "secrets" in out
+    assert "Stage" in out
+
+
+def test_dry_run_empty_project(tmp_path: Path,
+                                capsys: pytest.CaptureFixture[str]) -> None:
+    rc = main(["--dry-run", "--root", str(tmp_path)])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "Dry-run" in out
+    assert "secrets" in out
+
+
+def test_dry_run_with_skip(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    rc = main(["--dry-run", "--root", str(tmp_path), "--skip", "secrets"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "disabled" in out
+
+
+def test_markdown_out_written(tmp_path: Path) -> None:
+    md_path = tmp_path / "summary.md"
+    rc = main(["--root", str(tmp_path), "--markdown-out", str(md_path)])
+    assert rc == 0
+    content = md_path.read_text(encoding="utf-8")
+    assert "Pipewarden" in content
+
+
+def test_gh_annotations_with_findings(tmp_path: Path,
+                                       capsys: pytest.CaptureFixture[str]) -> None:
+    (tmp_path / "leak.py").write_text("KEY='AKIAIOSFODNN7EXAMPLE'\n")
+    rc = main(["--root", str(tmp_path), "--gh-annotations", "--no-color"])
+    assert rc == EXIT_SECRETS
+    out = capsys.readouterr().out
+    assert "::error" in out
+
+
+def test_verbose_flag(tmp_path: Path) -> None:
+    rc = main(["--root", str(tmp_path), "--verbose"])
+    assert rc == 0
+
+
+def test_log_file_flag(tmp_path: Path) -> None:
+    log_path = tmp_path / "run.log"
+    rc = main(["--root", str(tmp_path), "--log-file", str(log_path)])
+    assert rc == 0
+    assert log_path.exists()
+    # Close all handlers so pytest can clean up tmp_path on Windows.
+    for h in logging.root.handlers[:]:
+        h.close()
+        logging.root.removeHandler(h)
 
 
 def test_diff_mode_scopes_to_changed_files(tmp_path: Path) -> None:

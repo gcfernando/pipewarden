@@ -1,7 +1,13 @@
 import json
 from xml.etree import ElementTree as ET
 
-from pipewarden.reporters import to_json, to_junit_xml, to_sarif
+from pipewarden.reporters import (
+    to_github_annotations,
+    to_json,
+    to_junit_xml,
+    to_markdown_summary,
+    to_sarif,
+)
 from pipewarden.types import Finding, Report, Severity, Status, StepResult
 
 
@@ -67,3 +73,87 @@ def test_sarif_empty_report() -> None:
     rep = Report(root="/r", tool_version="1.0")
     data = json.loads(to_sarif(rep))
     assert data["runs"][0]["results"] == []
+
+
+def test_sarif_has_fingerprint() -> None:
+    rep = _sample_report()
+    data = json.loads(to_sarif(rep))
+    results = data["runs"][0]["results"]
+    assert len(results) == 1
+    assert "primaryLocationLineHash/v1" in results[0]["fingerprints"]
+    assert len(results[0]["fingerprints"]["primaryLocationLineHash/v1"]) == 64
+
+
+def test_github_annotations_with_finding() -> None:
+    rep = _sample_report()
+    out = to_github_annotations(rep)
+    assert "::error file=src/x.py,line=10" in out
+    assert "aws.access_key" in out
+
+
+def test_github_annotations_empty_report() -> None:
+    rep = Report(root="/r", tool_version="1.0")
+    out = to_github_annotations(rep)
+    assert out == ""
+
+
+def test_github_annotations_low_severity() -> None:
+    rep = Report(root="/r", tool_version="1.0")
+    rep.add(StepResult(name="s", status=Status.FAILED, findings=[
+        Finding(rule_id="test.rule", message="low severity finding",
+                severity=Severity.LOW, file="a.py", line=1, column=1),
+    ]))
+    out = to_github_annotations(rep)
+    assert "::warning " in out
+    assert "::error" not in out
+
+
+def test_github_annotations_encodes_special_chars() -> None:
+    rep = Report(root="/r", tool_version="1.0")
+    rep.add(StepResult(name="s", status=Status.FAILED, findings=[
+        Finding(rule_id="r", message="msg: with,commas\nand newlines",
+                severity=Severity.HIGH, file="f.py", line=1, column=1),
+    ]))
+    out = to_github_annotations(rep)
+    assert "%3A" in out or "%0A" in out or "%2C" in out
+
+
+def test_markdown_summary_all_pass() -> None:
+    rep = Report(root="/repo", tool_version="1.0")
+    rep.add(StepResult(name="py:lint", status=Status.PASSED, duration_s=1.0))
+    rep.duration_s = 1.0
+    out = to_markdown_summary(rep)
+    assert "Pipewarden" in out
+    assert "✅" in out
+    assert "py:lint" in out
+
+
+def test_markdown_summary_with_failures() -> None:
+    rep = Report(root="/repo", tool_version="1.0")
+    rep.add(StepResult(name="py:test", status=Status.FAILED, duration_s=2.0, message="boom"))
+    rep.duration_s = 2.0
+    out = to_markdown_summary(rep)
+    assert "❌" in out
+
+
+def test_markdown_summary_with_findings() -> None:
+    rep = _sample_report()
+    out = to_markdown_summary(rep)
+    assert "### Findings" in out
+    assert "aws.access_key" in out
+    assert "src/x.py" in out
+
+
+def test_markdown_summary_skipped_step() -> None:
+    rep = Report(root="/r", tool_version="1.0")
+    rep.add(StepResult(name="docker:build", status=Status.SKIPPED, message="no docker"))
+    out = to_markdown_summary(rep)
+    assert "SKIPPED" in out
+
+
+def test_junit_warned_step() -> None:
+    rep = Report(root="/r", tool_version="1.0")
+    rep.add(StepResult(name="docker:build", status=Status.WARNED, message="daemon missing"))
+    xml = to_junit_xml(rep)
+    assert "system-out" in xml
+    assert "WARNED" in xml
