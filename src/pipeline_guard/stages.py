@@ -56,10 +56,7 @@ def run_python(root: Path, d: Detection, cfg: PipelineConfig,
         if r.is_failure():
             return
 
-    if os.name == "nt":
-        vpy = str(venv / "Scripts" / "python.exe")
-    else:
-        vpy = str(venv / "bin" / "python")
+    vpy = str(venv / "Scripts" / "python.exe") if os.name == "nt" else str(venv / "bin" / "python")
 
     # Pick installer: uv > poetry > pip
     if d.has_uv_lock and shutil.which("uv"):
