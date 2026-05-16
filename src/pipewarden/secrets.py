@@ -92,9 +92,81 @@ SECRET_PATTERNS: list[tuple[str, Severity, re.Pattern[str]]] = [
         re.compile(r"\bdapi[a-f0-9]{32}\b")),
     ("hashicorp.vault_token", Severity.HIGH,
         re.compile(r"\bhvs\.[A-Za-z0-9_\-]{24,}\b")),
-    # Database connection strings
+    # Database connection strings — URI format
     ("mongodb.connection_string", Severity.CRITICAL,
         re.compile(r"mongodb(?:\+srv)?://[^:@\s]{1,100}:[^@\s]{1,200}@")),
+    ("postgres.connection_string", Severity.CRITICAL,
+        re.compile(r"postgres(?:ql)?://[^:@\s]{1,100}:[^@\s]{1,200}@")),
+    ("mysql.connection_string", Severity.CRITICAL,
+        re.compile(r"mysql(?:2)?://[^:@\s]{1,100}:[^@\s]{1,200}@")),
+    ("redis.connection_string", Severity.CRITICAL,
+        re.compile(r"redis(?:s)?://[^:@\s]*:[^@\s]{4,}@")),
+    ("amqp.connection_string", Severity.HIGH,
+        re.compile(r"amqps?://[^:@\s]{1,100}:[^@\s]{1,200}@")),
+    # SQL Server / JDBC — key=value style
+    ("mssql.connection_string", Severity.CRITICAL,
+        re.compile(
+            r"(?i)(?:Server|Data Source)\s*=[^;]+;(?:[^;]+;){0,10}"
+            r"(?:Password|PWD)\s*=\s*(?!Integrated|SSPI|True|False|;|\s)[^;'\"<\s]{4,}"
+        )),
+    ("jdbc.connection_string", Severity.CRITICAL,
+        re.compile(
+            r"(?i)jdbc:[a-z][a-z0-9+\-.]*://\S+?[?&;](?:password|pwd)=[^&;\s'\"]{4,}"
+        )),
+    # Azure
+    ("azure.storage_connection_string", Severity.CRITICAL,
+        re.compile(
+            r"(?i)DefaultEndpointsProtocol=https?;AccountName=[^;]+"
+            r";AccountKey=[A-Za-z0-9+/]{43,}={0,2}"
+        )),
+    ("azure.cosmos_connection_string", Severity.CRITICAL,
+        re.compile(
+            r"(?i)AccountEndpoint=https://[^;]+"
+            r";AccountKey=[A-Za-z0-9+/]{43,}={0,2}"
+        )),
+    ("azure.servicebus_connection_string", Severity.CRITICAL,
+        re.compile(
+            r"Endpoint=sb://[^;]+;"
+            r"SharedAccessKeyName=[^;]+;"
+            r"SharedAccessKey=[A-Za-z0-9+/=]{40,}"
+        )),
+    # AWS — temporary / STS credentials
+    ("aws.sts_key", Severity.HIGH,
+        re.compile(r"\bASIA[0-9A-Z]{16}\b")),
+    # Developer platforms
+    ("digitalocean.token", Severity.CRITICAL,
+        re.compile(r"\bdop_v1_[A-Za-z0-9]{64}\b")),
+    ("github.actions_token", Severity.CRITICAL,
+        re.compile(r"\bghs_[A-Za-z0-9]{36}\b")),
+    ("github.user_token", Severity.CRITICAL,
+        re.compile(r"\bghu_[A-Za-z0-9]{36}\b")),
+    ("linear.api_key", Severity.HIGH,
+        re.compile(r"\blin_api_[A-Za-z0-9]{40}\b")),
+    ("okta.token", Severity.HIGH,
+        re.compile(r"\bSSWS [A-Za-z0-9_\-]{42,}\b")),
+    # AI / ML platforms
+    ("huggingface.token", Severity.CRITICAL,
+        re.compile(r"\bhf_[A-Za-z0-9]{34,}\b")),
+    ("replicate.token", Severity.HIGH,
+        re.compile(r"\br8_[A-Za-z0-9]{37}\b")),
+    # Communication
+    ("telegram.bot_token", Severity.HIGH,
+        re.compile(r"\b[0-9]{8,10}:AA[A-Za-z0-9_\-]{33}\b")),
+    # Payment — additional
+    ("stripe.test_key", Severity.MEDIUM,
+        re.compile(r"\bsk_test_[0-9a-zA-Z]{24,}\b")),
+    ("stripe.webhook_secret", Severity.HIGH,
+        re.compile(r"\bwhsec_[A-Za-z0-9]{32,}\b")),
+    # E-commerce
+    ("shopify.access_token", Severity.CRITICAL,
+        re.compile(r"\bshpat_[A-Za-z0-9]{32}\b")),
+    ("shopify.storefront_token", Severity.CRITICAL,
+        re.compile(r"\bshpss_[A-Za-z0-9]{32}\b")),
+    ("shopify.custom_app_token", Severity.CRITICAL,
+        re.compile(r"\bshpca_[A-Za-z0-9]{32}\b")),
+    # Observability / Monitoring
+    ("newrelic.license_key", Severity.HIGH,
+        re.compile(r"\bNRAK-[A-F0-9]{32}\b")),
 ]
 
 

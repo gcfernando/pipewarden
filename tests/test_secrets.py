@@ -161,3 +161,247 @@ def test_mongodb_connection_string_detected(tmp_path: Path) -> None:
     r = scan_secrets_fallback(tmp_path, SecretsConfig())
     assert r.status == Status.FAILED
     assert any(f.rule_id == "mongodb.connection_string" for f in r.findings)
+
+
+# ---------------------------------------------------------------------------
+# Database URI connection strings
+# ---------------------------------------------------------------------------
+
+def test_postgres_connection_string_detected(tmp_path: Path) -> None:
+    (tmp_path / "db.py").write_text('DSN = "postgresql://admin:s3cr3t@db.example.com/prod"\n')
+    r = scan_secrets_fallback(tmp_path, SecretsConfig())
+    assert r.status == Status.FAILED
+    assert any(f.rule_id == "postgres.connection_string" for f in r.findings)
+
+
+def test_mysql_connection_string_detected(tmp_path: Path) -> None:
+    (tmp_path / "db.py").write_text('URL = "mysql://root:p@ssword@127.0.0.1/mydb"\n')
+    r = scan_secrets_fallback(tmp_path, SecretsConfig())
+    assert r.status == Status.FAILED
+    assert any(f.rule_id == "mysql.connection_string" for f in r.findings)
+
+
+def test_redis_connection_string_with_password_detected(tmp_path: Path) -> None:
+    (tmp_path / "cache.py").write_text('REDIS_URL = "redis://:supersecret@redis.host:6379/0"\n')
+    r = scan_secrets_fallback(tmp_path, SecretsConfig())
+    assert r.status == Status.FAILED
+    assert any(f.rule_id == "redis.connection_string" for f in r.findings)
+
+
+def test_redis_url_without_password_not_detected(tmp_path: Path) -> None:
+    (tmp_path / "cache.py").write_text('REDIS_URL = "redis://localhost:6379"\n')
+    r = scan_secrets_fallback(tmp_path, SecretsConfig())
+    # No credentials → should not flag as redis.connection_string
+    assert not any(f.rule_id == "redis.connection_string" for f in r.findings)
+
+
+def test_amqp_connection_string_detected(tmp_path: Path) -> None:
+    (tmp_path / "mq.py").write_text('URL = "amqp://guest:guest123@rabbitmq.host/vhost"\n')
+    r = scan_secrets_fallback(tmp_path, SecretsConfig())
+    assert r.status == Status.FAILED
+    assert any(f.rule_id == "amqp.connection_string" for f in r.findings)
+
+
+def test_mssql_connection_string_detected(tmp_path: Path) -> None:
+    conn = "Server=myserver.database.windows.net;Database=mydb;User Id=admin;Password=Secr3t!;\n"
+    (tmp_path / "app.config").write_text(conn)
+    r = scan_secrets_fallback(tmp_path, SecretsConfig())
+    assert r.status == Status.FAILED
+    assert any(f.rule_id == "mssql.connection_string" for f in r.findings)
+
+
+def test_mssql_integrated_security_not_detected(tmp_path: Path) -> None:
+    conn = "Server=myserver;Database=mydb;Integrated Security=SSPI;\n"
+    (tmp_path / "app.config").write_text(conn)
+    r = scan_secrets_fallback(tmp_path, SecretsConfig())
+    assert not any(f.rule_id == "mssql.connection_string" for f in r.findings)
+
+
+def test_jdbc_connection_string_detected(tmp_path: Path) -> None:
+    url = 'jdbc:postgresql://db.host:5432/prod?user=admin&password=s3cretPass\n'
+    (tmp_path / "datasource.properties").write_text(url)
+    r = scan_secrets_fallback(tmp_path, SecretsConfig())
+    assert r.status == Status.FAILED
+    assert any(f.rule_id == "jdbc.connection_string" for f in r.findings)
+
+
+def test_jdbc_sqlserver_semicolon_params_detected(tmp_path: Path) -> None:
+    url = "jdbc:sqlserver://host:1433;databaseName=mydb;user=sa;password=P@ssw0rd\n"
+    (tmp_path / "db.props").write_text(url)
+    r = scan_secrets_fallback(tmp_path, SecretsConfig())
+    assert r.status == Status.FAILED
+    assert any(f.rule_id == "jdbc.connection_string" for f in r.findings)
+
+
+# ---------------------------------------------------------------------------
+# Azure connection strings
+# ---------------------------------------------------------------------------
+
+def test_azure_storage_connection_string_detected(tmp_path: Path) -> None:
+    key = "A" * 43 + "="
+    conn = f"DefaultEndpointsProtocol=https;AccountName=mystorageacct;AccountKey={key};\n"
+    (tmp_path / "appsettings.json").write_text(conn)
+    r = scan_secrets_fallback(tmp_path, SecretsConfig())
+    assert r.status == Status.FAILED
+    assert any(f.rule_id == "azure.storage_connection_string" for f in r.findings)
+
+
+def test_azure_cosmos_connection_string_detected(tmp_path: Path) -> None:
+    key = "B" * 43 + "="
+    conn = f"AccountEndpoint=https://myaccount.documents.azure.com:443/;AccountKey={key};\n"
+    (tmp_path / "cosmos.txt").write_text(conn)
+    r = scan_secrets_fallback(tmp_path, SecretsConfig())
+    assert r.status == Status.FAILED
+    assert any(f.rule_id == "azure.cosmos_connection_string" for f in r.findings)
+
+
+def test_azure_servicebus_connection_string_detected(tmp_path: Path) -> None:
+    key = "C" * 40 + "="
+    conn = (
+        f"Endpoint=sb://mynamespace.servicebus.windows.net/;"
+        f"SharedAccessKeyName=RootManageSharedAccessKey;"
+        f"SharedAccessKey={key}\n"
+    )
+    (tmp_path / "servicebus.txt").write_text(conn)
+    r = scan_secrets_fallback(tmp_path, SecretsConfig())
+    assert r.status == Status.FAILED
+    assert any(f.rule_id == "azure.servicebus_connection_string" for f in r.findings)
+
+
+# ---------------------------------------------------------------------------
+# AWS STS / temporary credentials
+# ---------------------------------------------------------------------------
+
+def test_aws_sts_key_detected(tmp_path: Path) -> None:
+    (tmp_path / "env.txt").write_text("AWS_ACCESS_KEY_ID=ASIAIOSFODNN7EXAMPLE\n")
+    r = scan_secrets_fallback(tmp_path, SecretsConfig())
+    assert r.status == Status.FAILED
+    assert any(f.rule_id == "aws.sts_key" for f in r.findings)
+
+
+# ---------------------------------------------------------------------------
+# Developer platform tokens
+# ---------------------------------------------------------------------------
+
+def test_digitalocean_token_detected(tmp_path: Path) -> None:
+    token = "dop_v1_" + "a" * 64
+    (tmp_path / "tf.tf").write_text(f'token = "{token}"\n')
+    r = scan_secrets_fallback(tmp_path, SecretsConfig())
+    assert r.status == Status.FAILED
+    assert any(f.rule_id == "digitalocean.token" for f in r.findings)
+
+
+def test_github_actions_token_detected(tmp_path: Path) -> None:
+    token = "ghs_" + "A" * 36
+    (tmp_path / "script.sh").write_text(f"TOKEN={token}\n")
+    r = scan_secrets_fallback(tmp_path, SecretsConfig())
+    assert r.status == Status.FAILED
+    assert any(f.rule_id == "github.actions_token" for f in r.findings)
+
+
+def test_github_user_token_detected(tmp_path: Path) -> None:
+    token = "ghu_" + "B" * 36
+    (tmp_path / "script.sh").write_text(f"TOKEN={token}\n")
+    r = scan_secrets_fallback(tmp_path, SecretsConfig())
+    assert r.status == Status.FAILED
+    assert any(f.rule_id == "github.user_token" for f in r.findings)
+
+
+def test_linear_api_key_detected(tmp_path: Path) -> None:
+    token = "lin_api_" + "x" * 40
+    (tmp_path / "linear.py").write_text(f'API_KEY = "{token}"\n')
+    r = scan_secrets_fallback(tmp_path, SecretsConfig())
+    assert r.status == Status.FAILED
+    assert any(f.rule_id == "linear.api_key" for f in r.findings)
+
+
+def test_okta_token_detected(tmp_path: Path) -> None:
+    token = "SSWS " + "A" * 42
+    (tmp_path / "okta.py").write_text(f'AUTH = "{token}"\n')
+    r = scan_secrets_fallback(tmp_path, SecretsConfig())
+    assert r.status == Status.FAILED
+    assert any(f.rule_id == "okta.token" for f in r.findings)
+
+
+# ---------------------------------------------------------------------------
+# AI / ML platform tokens
+# ---------------------------------------------------------------------------
+
+def test_huggingface_token_detected(tmp_path: Path) -> None:
+    token = "hf_" + "A" * 34
+    (tmp_path / "model.py").write_text(f'HF_TOKEN = "{token}"\n')
+    r = scan_secrets_fallback(tmp_path, SecretsConfig())
+    assert r.status == Status.FAILED
+    assert any(f.rule_id == "huggingface.token" for f in r.findings)
+
+
+def test_replicate_token_detected(tmp_path: Path) -> None:
+    token = "r8_" + "A" * 37
+    (tmp_path / "gen.py").write_text(f'TOKEN = "{token}"\n')
+    r = scan_secrets_fallback(tmp_path, SecretsConfig())
+    assert r.status == Status.FAILED
+    assert any(f.rule_id == "replicate.token" for f in r.findings)
+
+
+# ---------------------------------------------------------------------------
+# Communication tokens
+# ---------------------------------------------------------------------------
+
+def test_telegram_bot_token_detected(tmp_path: Path) -> None:
+    token = "123456789:AA" + "B" * 33
+    (tmp_path / "bot.py").write_text(f'BOT_TOKEN = "{token}"\n')
+    r = scan_secrets_fallback(tmp_path, SecretsConfig())
+    assert r.status == Status.FAILED
+    assert any(f.rule_id == "telegram.bot_token" for f in r.findings)
+
+
+# ---------------------------------------------------------------------------
+# Payment — additional
+# ---------------------------------------------------------------------------
+
+def test_stripe_test_key_detected(tmp_path: Path) -> None:
+    token = "sk_test_" + "a" * 24
+    (tmp_path / "pay.py").write_text(f'STRIPE_KEY = "{token}"\n')
+    r = scan_secrets_fallback(tmp_path, SecretsConfig())
+    assert r.status == Status.FAILED
+    assert any(f.rule_id == "stripe.test_key" for f in r.findings)
+
+
+def test_stripe_webhook_secret_detected(tmp_path: Path) -> None:
+    token = "whsec_" + "a" * 32
+    (tmp_path / "webhook.py").write_text(f'SECRET = "{token}"\n')
+    r = scan_secrets_fallback(tmp_path, SecretsConfig())
+    assert r.status == Status.FAILED
+    assert any(f.rule_id == "stripe.webhook_secret" for f in r.findings)
+
+
+# ---------------------------------------------------------------------------
+# E-commerce
+# ---------------------------------------------------------------------------
+
+def test_shopify_access_token_detected(tmp_path: Path) -> None:
+    token = "shpat_" + "a" * 32
+    (tmp_path / "shop.py").write_text(f'ACCESS_TOKEN = "{token}"\n')
+    r = scan_secrets_fallback(tmp_path, SecretsConfig())
+    assert r.status == Status.FAILED
+    assert any(f.rule_id == "shopify.access_token" for f in r.findings)
+
+
+def test_shopify_storefront_token_detected(tmp_path: Path) -> None:
+    token = "shpss_" + "b" * 32
+    (tmp_path / "shop.py").write_text(f'SF_TOKEN = "{token}"\n')
+    r = scan_secrets_fallback(tmp_path, SecretsConfig())
+    assert r.status == Status.FAILED
+    assert any(f.rule_id == "shopify.storefront_token" for f in r.findings)
+
+
+# ---------------------------------------------------------------------------
+# Observability
+# ---------------------------------------------------------------------------
+
+def test_newrelic_license_key_detected(tmp_path: Path) -> None:
+    key = "NRAK-" + "A" * 32
+    (tmp_path / "newrelic.ini").write_text(f"license_key = {key}\n")
+    r = scan_secrets_fallback(tmp_path, SecretsConfig())
+    assert r.status == Status.FAILED
+    assert any(f.rule_id == "newrelic.license_key" for f in r.findings)

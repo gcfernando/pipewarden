@@ -1472,32 +1472,103 @@ gitleaks installed?
 
 ### What the Built-in Scanner Detects
 
-22 high-precision patterns — no noisy keyword matching.
+46 high-precision patterns — no noisy keyword matching.
+
+**Cloud provider credentials**
 
 | Rule ID | Severity | What It Finds | Example Pattern |
 |---------|----------|---------------|-----------------|
-| `aws.access_key` | 🔴 CRITICAL | AWS Access Key ID | `AKIA` + 16 chars |
+| `aws.access_key` | 🔴 CRITICAL | AWS IAM Access Key ID | `AKIA` + 16 chars |
 | `aws.secret_key` | 🔴 CRITICAL | AWS Secret Access Key | `aws_secret_access_key = ...` |
+| `aws.sts_key` | 🟠 HIGH | AWS STS / temporary key | `ASIA` + 16 chars |
+| `google.api_key` | 🟠 HIGH | Google API Key | `AIza` + 35 chars |
+
+**Version control & CI tokens**
+
+| Rule ID | Severity | What It Finds | Example Pattern |
+|---------|----------|---------------|-----------------|
 | `github.pat_classic` | 🔴 CRITICAL | GitHub Personal Access Token | `ghp_` + 36 chars |
 | `github.pat_fine_grained` | 🔴 CRITICAL | GitHub Fine-Grained PAT | `github_pat_` + 82 chars |
 | `github.oauth` | 🔴 CRITICAL | GitHub OAuth Token | `gho_` + 36 chars |
+| `github.actions_token` | 🔴 CRITICAL | GitHub Actions Runner Token | `ghs_` + 36 chars |
+| `github.user_token` | 🔴 CRITICAL | GitHub User-to-Server Token | `ghu_` + 36 chars |
 | `gitlab.pat` | 🔴 CRITICAL | GitLab Personal Access Token | `glpat-` + 20 chars |
-| `stripe.live_key` | 🔴 CRITICAL | Stripe Live Secret Key | `sk_live_` + 24 chars |
-| `private_key.pem` | 🔴 CRITICAL | PEM Private Key Block | `-----BEGIN ... PRIVATE KEY-----` |
+| `digitalocean.token` | 🔴 CRITICAL | DigitalOcean Personal Token | `dop_v1_` + 64 chars |
+| `linear.api_key` | 🟠 HIGH | Linear API Key | `lin_api_` + 40 chars |
+| `okta.token` | 🟠 HIGH | Okta SSWS API Token | `SSWS ` + 42 chars |
+
+**Database connection strings (URI format)**
+
+| Rule ID | Severity | What It Finds | Example Pattern |
+|---------|----------|---------------|-----------------|
+| `mongodb.connection_string` | 🔴 CRITICAL | MongoDB URI with credentials | `mongodb://HOST/DB` (with user:pass) |
+| `postgres.connection_string` | 🔴 CRITICAL | PostgreSQL URI with credentials | `postgresql://` + user:pass + `@host` |
+| `mysql.connection_string` | 🔴 CRITICAL | MySQL URI with credentials | `mysql://` + user:pass + `@host` |
+| `redis.connection_string` | 🔴 CRITICAL | Redis URI with password | `redis://` + `:password@host` |
+| `mssql.connection_string` | 🔴 CRITICAL | SQL Server ADO.NET connection string | `Server=…;Password=…` |
+| `jdbc.connection_string` | 🔴 CRITICAL | JDBC URL with password param | `jdbc:…://…?password=…` |
+| `amqp.connection_string` | 🟠 HIGH | AMQP / RabbitMQ URI with credentials | `amqp://` + user:pass + `@host` |
+
+**Azure connection strings**
+
+| Rule ID | Severity | What It Finds | Example Pattern |
+|---------|----------|---------------|-----------------|
+| `azure.storage_connection_string` | 🔴 CRITICAL | Azure Storage Account Key | `DefaultEndpointsProtocol=…;AccountKey=…` |
+| `azure.cosmos_connection_string` | 🔴 CRITICAL | Azure Cosmos DB Account Key | `AccountEndpoint=…;AccountKey=…` |
+| `azure.servicebus_connection_string` | 🔴 CRITICAL | Azure Service Bus / Event Hubs SAS Key | `Endpoint=sb://…;SharedAccessKey=…` |
+
+**AI / ML service API keys**
+
+| Rule ID | Severity | What It Finds | Example Pattern |
+|---------|----------|---------------|-----------------|
 | `anthropic.api_key` | 🔴 CRITICAL | Anthropic API Key | `sk-ant-` + 40 chars |
 | `openai.api_key` | 🔴 CRITICAL | OpenAI API Key (classic) | `sk-` + 48 chars |
 | `openai.api_key_project` | 🔴 CRITICAL | OpenAI Project API Key | `sk-proj-` + 100 chars |
-| `mongodb.connection_string` | 🔴 CRITICAL | MongoDB Connection URI | `mongodb://HOST/DB` (with credentials) |
-| `slack.token` | 🟠 HIGH | Slack Bot/App Token | `xox[abprs]-...` |
-| `twilio.account_sid` | 🟠 HIGH | Twilio Account SID | `AC` + 32 hex chars |
-| `sendgrid.api_key` | 🟠 HIGH | SendGrid API Key | `SG.` + 22 chars + `.` + 43 chars |
-| `google.api_key` | 🟠 HIGH | Google API Key | `AIza` + 35 chars |
+| `huggingface.token` | 🔴 CRITICAL | Hugging Face User Access Token | `hf_` + 34 chars |
+| `replicate.token` | 🟠 HIGH | Replicate API Token | `r8_` + 37 chars |
+
+**Payment & e-commerce**
+
+| Rule ID | Severity | What It Finds | Example Pattern |
+|---------|----------|---------------|-----------------|
+| `stripe.live_key` | 🔴 CRITICAL | Stripe Live Secret Key | `sk_live_` + 24 chars |
+| `shopify.access_token` | 🔴 CRITICAL | Shopify Admin API Token | `shpat_` + 32 chars |
+| `shopify.storefront_token` | 🔴 CRITICAL | Shopify Storefront Token | `shpss_` + 32 chars |
+| `shopify.custom_app_token` | 🔴 CRITICAL | Shopify Custom App Token | `shpca_` + 32 chars |
 | `stripe.restricted` | 🟠 HIGH | Stripe Restricted Key | `rk_live_` + 24 chars |
+| `stripe.webhook_secret` | 🟠 HIGH | Stripe Webhook Signing Secret | `whsec_` + 32 chars |
+| `stripe.test_key` | 🟡 MEDIUM | Stripe Test Secret Key | `sk_test_` + 24 chars |
+
+**Communication & messaging**
+
+| Rule ID | Severity | What It Finds | Example Pattern |
+|---------|----------|---------------|-----------------|
+| `slack.token` | 🟠 HIGH | Slack Bot/App Token | `xox[abprs]-...` |
+| `sendgrid.api_key` | 🟠 HIGH | SendGrid API Key | `SG.` + 22 + `.` + 43 chars |
+| `twilio.account_sid` | 🟠 HIGH | Twilio Account SID | `AC` + 32 hex chars |
+| `telegram.bot_token` | 🟠 HIGH | Telegram Bot Token | `12345678:AA` + 33 chars |
+
+**Package registries & private keys**
+
+| Rule ID | Severity | What It Finds | Example Pattern |
+|---------|----------|---------------|-----------------|
+| `private_key.pem` | 🔴 CRITICAL | PEM Private Key Block | `-----BEGIN … PRIVATE KEY-----` |
 | `npm.token` | 🟠 HIGH | npm Automation Token | `npm_` + 36 chars |
 | `pypi.api_token` | 🟠 HIGH | PyPI API Token | `pypi-` + 64 chars |
+
+**Cloud infrastructure & observability**
+
+| Rule ID | Severity | What It Finds | Example Pattern |
+|---------|----------|---------------|-----------------|
 | `databricks.token` | 🟠 HIGH | Databricks Personal Token | `dapi` + 32 hex chars |
 | `hashicorp.vault_token` | 🟠 HIGH | HashiCorp Vault Service Token | `hvs.` + 24 chars |
-| `jwt` | 🟡 MEDIUM | JSON Web Token | `eyJ...eyJ...` (3-part) |
+| `newrelic.license_key` | 🟠 HIGH | New Relic License Key | `NRAK-` + 32 hex chars |
+
+**Auth tokens**
+
+| Rule ID | Severity | What It Finds | Example Pattern |
+|---------|----------|---------------|-----------------|
+| `jwt` | 🟡 MEDIUM | JSON Web Token | `eyJ…eyJ…` (3-part) |
 
 ### Severity Levels Explained
 
