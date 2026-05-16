@@ -5,7 +5,16 @@
       "Bash(Select-Object -ExpandProperty FullName)",
       "Bash(python -m py_compile src/pipeline_guard/*.py)",
       "Bash(python -c \"from pipeline_guard.cli import main; print\\(f'main is callable: {callable\\(main\\)}'\\)\")",
-      "Bash(python -c ' *)"
+      "Bash(python -c ' *)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Gehan\\\\Projects\\\\Pipeline-Guard\" -Recurse -File)",
+      "Bash(python -m pytest tests/ -q --tb=short)",
+      "Bash(pip install *)",
+      "Bash(python -m pytest tests/ -q)",
+      "Bash(python -m pytest tests/)",
+      "Bash(python -m pipewarden --list-stages)",
+      "Bash(python -m pipewarden --dry-run)",
+      "Bash(python -m pipewarden --validate)",
+      "PowerShell(New-Item *)"
     ]
   }
 }

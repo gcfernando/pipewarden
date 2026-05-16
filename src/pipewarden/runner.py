@@ -1,7 +1,7 @@
 """Subprocess execution. The ONLY place we spawn processes.
 
-Centralising this lets us guarantee timeouts, output capture, and a uniform
-StepResult for every command.
+Centralising this lets us guarantee timeouts, output capture, retries, and a
+uniform StepResult for every command.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import time
+from collections import deque
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -20,8 +21,31 @@ from .types import Status, StepResult
 
 _POSIX = sys.platform != "win32"
 
-# We tail this many lines per step into the report.
+# Lines captured per step for the failure tail.
 TAIL_LINES = 60
+
+# Exit codes that indicate a transient failure worth retrying (network/timeout).
+_TRANSIENT_RETURNCODES: frozenset[int] = frozenset({
+    1,    # generic; refined by message heuristics below
+    124,  # timeout (GNU coreutils timeout command)
+    137,  # SIGKILL (OOM or timeout)
+    143,  # SIGTERM
+})
+
+_TRANSIENT_MESSAGES = (
+    "timeout", "timed out", "connection reset", "network", "ssl", "certificate",
+    "temporary failure", "name or service not known", "rate limit", "503", "502",
+    "could not resolve", "eof occurred", "broken pipe",
+)
+
+
+def _is_transient(result: StepResult) -> bool:
+    """Heuristic: did this failure look like a transient network/resource issue?"""
+    if result.status != Status.FAILED:
+        return False
+    msg = (result.message or "").lower()
+    tail = (result.stdout_tail or "").lower()
+    return any(t in msg or t in tail for t in _TRANSIENT_MESSAGES)
 
 
 def run_cmd(
@@ -34,11 +58,41 @@ def run_cmd(
     required: bool = True,
     stream: bool = True,
     indent: str = "   ",
+    retries: int = 0,
+    backoff_base: float = 2.0,
 ) -> StepResult:
-    """Run `cmd`, stream output (optional), capture tail, return StepResult.
+    """Run `cmd`, stream output, capture tail, return StepResult.
 
-    `required=False` downgrades non-zero exits and missing binaries to WARNED.
+    `required=False`  downgrades failures to WARNED.
+    `retries`         how many additional attempts on transient failures.
+    `backoff_base`    seconds before first retry; doubles each attempt.
     """
+    attempt = 0
+    wait = backoff_base
+    while True:
+        result = _run_once(cmd, cwd=cwd, name=name, timeout=timeout,
+                           env=env, required=required, stream=stream, indent=indent)
+        if retries > 0 and attempt < retries and _is_transient(result):
+            attempt += 1
+            suffix = f" (retry {attempt}/{retries} in {wait:.0f}s)"
+            print(f"   ⟳ {name}{suffix}", flush=True)
+            time.sleep(wait)
+            wait *= 2
+            continue
+        return result
+
+
+def _run_once(
+    cmd: Sequence[str],
+    *,
+    cwd: Path,
+    name: str,
+    timeout: int,
+    env: dict[str, str] | None = None,
+    required: bool = True,
+    stream: bool = True,
+    indent: str = "   ",
+) -> StepResult:
     start = time.monotonic()
     binary = shutil.which(cmd[0])
     if binary is None:
@@ -67,15 +121,10 @@ def run_cmd(
             message=f"failed to spawn: {e}",
         )
 
-    tail: list[str] = []
+    # Use deque for O(1) append+trim instead of O(n) list slicing.
+    tail: deque[str] = deque(maxlen=TAIL_LINES * 4)
     assert proc.stdout is not None
     deadline = time.monotonic() + timeout
-
-    def _append_line(stripped: str) -> None:
-        tail.append(stripped)
-        if len(tail) > TAIL_LINES * 4:
-            # Trim to avoid unbounded memory on chatty commands.
-            del tail[: len(tail) - TAIL_LINES * 2]
 
     try:
         try:
@@ -85,31 +134,22 @@ def run_cmd(
                     proc.kill()
                     with contextlib.suppress(subprocess.TimeoutExpired):
                         proc.wait(timeout=5)
-                    # Drain any final buffered output before returning.
                     with contextlib.suppress(Exception):
                         for line in proc.stdout:
-                            stripped = line.rstrip("\n")
-                            _append_line(stripped)
+                            tail.append(line.rstrip("\n"))
                             if stream:
                                 print(f"{indent}{line}", end="")
                     return StepResult(
                         name=name,
                         status=Status.FAILED if required else Status.WARNED,
                         duration_s=time.monotonic() - start,
-                        message=f"timeout after {timeout}s",
-                        stdout_tail="\n".join(tail[-TAIL_LINES:]),
+                        message=f"timeout after {timeout}s — command: {cmd[0]}",
+                        stdout_tail="\n".join(list(tail)[-TAIL_LINES:]),
                     )
 
-                # Wait briefly for the process to exit. This bounds how long
-                # we can be stuck before re-checking the deadline.
                 with contextlib.suppress(subprocess.TimeoutExpired):
                     proc.wait(timeout=min(0.1, remaining))
 
-                # Drain whatever output is currently available. After the
-                # process exits the pipe closes and readline() returns "".
-                # On POSIX use a non-blocking select check first so we never
-                # block here when the process produces no output — that would
-                # prevent the deadline at the top of the loop from being reached.
                 while True:
                     if _POSIX:
                         readable, _, _ = select.select([proc.stdout], [], [], 0.0)
@@ -118,8 +158,7 @@ def run_cmd(
                     line = proc.stdout.readline()
                     if not line:
                         break
-                    stripped = line.rstrip("\n")
-                    _append_line(stripped)
+                    tail.append(line.rstrip("\n"))
                     if stream:
                         print(f"{indent}{line}", end="")
 
@@ -128,7 +167,6 @@ def run_cmd(
 
             returncode = proc.wait()
         finally:
-            # Always close the pipe to avoid resource leaks (ResourceWarning).
             with contextlib.suppress(Exception):
                 proc.stdout.close()
     except KeyboardInterrupt:  # pragma: no cover
@@ -138,40 +176,31 @@ def run_cmd(
         raise
 
     duration = time.monotonic() - start
-    tail_str = "\n".join(tail[-TAIL_LINES:])
+    tail_str = "\n".join(list(tail)[-TAIL_LINES:])
+
     if returncode == 0:
         return StepResult(
-            name=name,
-            status=Status.PASSED,
-            duration_s=duration,
-            returncode=0,
-            stdout_tail=tail_str,
+            name=name, status=Status.PASSED,
+            duration_s=duration, returncode=0, stdout_tail=tail_str,
         )
     return StepResult(
         name=name,
         status=Status.FAILED if required else Status.WARNED,
         duration_s=duration,
         returncode=returncode,
-        message=f"exit {returncode}",
+        message=f"exit {returncode} — command: {cmd[0]}",
         stdout_tail=tail_str,
     )
 
 
 def capture(cmd: Sequence[str], cwd: Path, timeout: int = 30) -> str | None:
-    """Run a command and return stdout, or None on any failure.
-
-    Used for cheap metadata queries (e.g. `git ls-files`, `npm config get`).
-    """
+    """Run a command silently and return stdout, or None on any failure."""
     if shutil.which(cmd[0]) is None:
         return None
     try:
-        out = subprocess.check_output(
-            list(cmd),
-            cwd=str(cwd),
-            text=True,
-            timeout=timeout,
-            stderr=subprocess.DEVNULL,
+        return subprocess.check_output(
+            list(cmd), cwd=str(cwd), text=True,
+            timeout=timeout, stderr=subprocess.DEVNULL,
         )
-        return out
     except (subprocess.SubprocessError, OSError):
         return None

@@ -39,31 +39,100 @@ BINARY_EXTENSIONS = {
 # (rule_id, severity, regex).
 # Conservative — high-signal. Avoids the generic "API_KEY=" substring trap.
 SECRET_PATTERNS: list[tuple[str, Severity, re.Pattern[str]]] = [
+    # AWS
     ("aws.access_key", Severity.CRITICAL,
         re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
     ("aws.secret_key", Severity.CRITICAL,
         re.compile(r"(?i)aws_secret_access_key\s*[=:]\s*['\"]?[A-Za-z0-9/+=]{40}['\"]?")),
+    # GitHub
     ("github.pat_classic", Severity.CRITICAL,
         re.compile(r"\bghp_[A-Za-z0-9]{36}\b")),
     ("github.pat_fine_grained", Severity.CRITICAL,
         re.compile(r"\bgithub_pat_[A-Za-z0-9_]{82}\b")),
     ("github.oauth", Severity.CRITICAL,
         re.compile(r"\bgho_[A-Za-z0-9]{36}\b")),
+    # GitLab
+    ("gitlab.pat", Severity.CRITICAL,
+        re.compile(r"\bglpat-[A-Za-z0-9_\-]{20}\b")),
+    # Communication / SaaS
     ("slack.token", Severity.HIGH,
         re.compile(r"\bxox[abprs]-[A-Za-z0-9-]{10,}\b")),
+    ("twilio.account_sid", Severity.HIGH,
+        re.compile(r"\bAC[a-f0-9]{32}\b")),
+    ("sendgrid.api_key", Severity.HIGH,
+        re.compile(r"\bSG\.[A-Za-z0-9_\-]{22}\.[A-Za-z0-9_\-]{43}\b")),
+    # Google
     ("google.api_key", Severity.HIGH,
         re.compile(r"\bAIza[0-9A-Za-z_\-]{35}\b")),
+    # Payment
     ("stripe.live_key", Severity.CRITICAL,
         re.compile(r"\bsk_live_[0-9a-zA-Z]{24,}\b")),
     ("stripe.restricted", Severity.HIGH,
         re.compile(r"\brk_live_[0-9a-zA-Z]{24,}\b")),
+    # Private keys / certificates
     ("private_key.pem", Severity.CRITICAL,
         re.compile(r"-----BEGIN (RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----")),
+    # Auth tokens
     ("jwt", Severity.MEDIUM,
         re.compile(r"\beyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\b")),
+    # Package registries
     ("npm.token", Severity.HIGH,
         re.compile(r"\bnpm_[A-Za-z0-9]{36}\b")),
+    ("pypi.api_token", Severity.HIGH,
+        re.compile(r"\bpypi-[A-Za-z0-9_\-]{64,}\b")),
+    # AI service APIs
+    ("anthropic.api_key", Severity.CRITICAL,
+        re.compile(r"\bsk-ant-[A-Za-z0-9_\-]{40,}\b")),
+    ("openai.api_key", Severity.CRITICAL,
+        re.compile(r"\bsk-[A-Za-z0-9]{48}\b")),
+    ("openai.api_key_project", Severity.CRITICAL,
+        re.compile(r"\bsk-proj-[A-Za-z0-9_\-]{100,}\b")),
+    # Cloud platforms
+    ("databricks.token", Severity.HIGH,
+        re.compile(r"\bdapi[a-f0-9]{32}\b")),
+    ("hashicorp.vault_token", Severity.HIGH,
+        re.compile(r"\bhvs\.[A-Za-z0-9_\-]{24,}\b")),
+    # Database connection strings
+    ("mongodb.connection_string", Severity.CRITICAL,
+        re.compile(r"mongodb(?:\+srv)?://[^:@\s]{1,100}:[^@\s]{1,200}@")),
 ]
+
+
+def _compile_glob(pattern: str) -> re.Pattern[str]:
+    """Compile a gitignore-style glob (supports **, *, ?) to a regex.
+
+    Rules:
+      **/  matches zero or more directory segments (including none).
+      **   anywhere else matches any path including /.
+      *    matches any sequence of non-/ chars.
+      ?    matches any single non-/ char.
+    """
+    pattern = pattern.replace("\\", "/")
+    i, n = 0, len(pattern)
+    buf: list[str] = ["^"]
+    while i < n:
+        if pattern[i : i + 3] == "**/":
+            buf.append("(.*/)?")
+            i += 3
+        elif pattern[i : i + 2] == "**":
+            buf.append(".*")
+            i += 2
+        elif pattern[i] == "*":
+            buf.append("[^/]*")
+            i += 1
+        elif pattern[i] == "?":
+            buf.append("[^/]")
+            i += 1
+        else:
+            buf.append(re.escape(pattern[i]))
+            i += 1
+    buf.append("$")
+    return re.compile("".join(buf))
+
+
+def _path_allowlisted(rel_path: str, compiled: list[re.Pattern[str]]) -> bool:
+    """Return True if rel_path matches any precompiled allowlist pattern."""
+    return any(rx.match(rel_path) for rx in compiled)
 
 
 def iter_files(root: Path, max_files: int, diff_base: str | None = None) -> Iterable[Path]:
@@ -132,12 +201,6 @@ def iter_files(root: Path, max_files: int, diff_base: str | None = None) -> Iter
             return
 
 
-def _path_allowlisted(rel_path: str, patterns: list[str]) -> bool:
-    """Match rel_path against fnmatch-style patterns."""
-    from fnmatch import fnmatch
-    return any(fnmatch(rel_path, p) for p in patterns)
-
-
 def scan_secrets_fallback(
     root: Path, cfg: SecretsConfig, diff_base: str | None = None
 ) -> StepResult:
@@ -148,10 +211,12 @@ def scan_secrets_fallback(
     scanned = 0
     rule_allow = set(cfg.allowlist_rules)
     string_allow = cfg.allowlist_strings
+    # Precompile allowlist globs once — avoids re-compiling per file.
+    allow_path_regexes = [_compile_glob(p) for p in cfg.allowlist_paths]
 
     for path in iter_files(root, cfg.max_files, diff_base=diff_base):
         rel = path.relative_to(root).as_posix()
-        if _path_allowlisted(rel, cfg.allowlist_paths):
+        if _path_allowlisted(rel, allow_path_regexes):
             continue
         if path.suffix.lower() in BINARY_EXTENSIONS:
             continue
@@ -172,7 +237,6 @@ def scan_secrets_fallback(
                     continue
                 line_no = content[: m.start()].count("\n") + 1
                 col = m.start() - content.rfind("\n", 0, m.start())
-                # Truncated snippet (redacted middle if long)
                 snippet = matched if len(matched) <= 16 else f"{matched[:4]}…{matched[-4:]}"
                 findings.append(Finding(
                     rule_id=rule_id, message=f"possible {rule_id}",
@@ -200,9 +264,8 @@ def scan_secrets(
     """Entry point. Prefers gitleaks, falls back to built-in scanner."""
     if cfg.prefer_external and shutil.which("gitleaks"):
         cmd = ["gitleaks", "detect", "--no-banner", "--redact", "--source", str(root)]
-        # gitleaks has a separate `protect --staged` mode but for simplicity
-        # we fall back to the built-in scanner when a diff base is requested
-        # — gitleaks doesn't natively scope by arbitrary ref range here.
+        # gitleaks doesn't natively scope by arbitrary ref range, so fall back
+        # to the built-in scanner when a diff base is requested.
         if diff_base is not None:
             return scan_secrets_fallback(root, cfg, diff_base=diff_base)
         return run_cmd(cmd, cwd=root, name="secrets:gitleaks", timeout=timeout, required=True)

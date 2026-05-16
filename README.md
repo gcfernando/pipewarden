@@ -38,15 +38,16 @@
 | 8 | [.NET Projects — Complete Guide](#-net-projects--complete-guide) |
 | 9 | [Secret Scanning Deep Dive](#-secret-scanning-deep-dive) |
 | 10 | [Reading the Output](#-reading-the-output) |
-| 11 | [Reports — SARIF, JUnit XML, JSON](#-reports--sarif-junit-xml-json) |
+| 11 | [Reports — SARIF, JUnit XML, JSON, Markdown](#-reports--sarif-junit-xml-json-markdown) |
 | 12 | [Configuration Reference](#-configuration-reference) |
-| 13 | [CI / CD Integration](#-ci--cd-integration) |
-| 14 | [GitHub Actions (Official Action)](#-github-actions-official-action) |
-| 15 | [Pre-Commit Hooks](#-pre-commit-hooks) |
-| 16 | [CLI Reference](#-cli-reference) |
-| 17 | [Business Benefits & ROI](#-business-benefits--roi) |
-| 18 | [Frequently Asked Questions](#-frequently-asked-questions) |
-| 19 | [Contributing](#-contributing) |
+| 13 | [Environment Variable Overrides](#-environment-variable-overrides) |
+| 14 | [CI / CD Integration](#-ci--cd-integration) |
+| 15 | [GitHub Actions (Official Action)](#-github-actions-official-action) |
+| 16 | [Pre-Commit Hooks](#-pre-commit-hooks) |
+| 17 | [CLI Reference](#-cli-reference) |
+| 18 | [Business Benefits & ROI](#-business-benefits--roi) |
+| 19 | [Frequently Asked Questions](#-frequently-asked-questions) |
+| 20 | [Contributing](#-contributing) |
 
 ---
 
@@ -207,7 +208,7 @@ Findings (1):
   CRITICAL  src/config.py:14  [aws.access_key]  AKIA…WXYZ
 ```
 
-**Exit code `1`.** The pipeline stops. The key never reaches the remote repository.
+**Exit code `4` (secrets specifically failed).** The pipeline stops. The key never reaches the remote repository.
 
 ---
 
@@ -1471,6 +1472,8 @@ gitleaks installed?
 
 ### What the Built-in Scanner Detects
 
+22 high-precision patterns — no noisy keyword matching.
+
 | Rule ID | Severity | What It Finds | Example Pattern |
 |---------|----------|---------------|-----------------|
 | `aws.access_key` | 🔴 CRITICAL | AWS Access Key ID | `AKIA` + 16 chars |
@@ -1478,12 +1481,22 @@ gitleaks installed?
 | `github.pat_classic` | 🔴 CRITICAL | GitHub Personal Access Token | `ghp_` + 36 chars |
 | `github.pat_fine_grained` | 🔴 CRITICAL | GitHub Fine-Grained PAT | `github_pat_` + 82 chars |
 | `github.oauth` | 🔴 CRITICAL | GitHub OAuth Token | `gho_` + 36 chars |
+| `gitlab.pat` | 🔴 CRITICAL | GitLab Personal Access Token | `glpat-` + 20 chars |
 | `stripe.live_key` | 🔴 CRITICAL | Stripe Live Secret Key | `sk_live_` + 24 chars |
 | `private_key.pem` | 🔴 CRITICAL | PEM Private Key Block | `-----BEGIN ... PRIVATE KEY-----` |
+| `anthropic.api_key` | 🔴 CRITICAL | Anthropic API Key | `sk-ant-` + 40 chars |
+| `openai.api_key` | 🔴 CRITICAL | OpenAI API Key (classic) | `sk-` + 48 chars |
+| `openai.api_key_project` | 🔴 CRITICAL | OpenAI Project API Key | `sk-proj-` + 100 chars |
+| `mongodb.connection_string` | 🔴 CRITICAL | MongoDB Connection URI | `mongodb://user:pass@host` |
 | `slack.token` | 🟠 HIGH | Slack Bot/App Token | `xox[abprs]-...` |
+| `twilio.account_sid` | 🟠 HIGH | Twilio Account SID | `AC` + 32 hex chars |
+| `sendgrid.api_key` | 🟠 HIGH | SendGrid API Key | `SG.` + 22 chars + `.` + 43 chars |
 | `google.api_key` | 🟠 HIGH | Google API Key | `AIza` + 35 chars |
 | `stripe.restricted` | 🟠 HIGH | Stripe Restricted Key | `rk_live_` + 24 chars |
 | `npm.token` | 🟠 HIGH | npm Automation Token | `npm_` + 36 chars |
+| `pypi.api_token` | 🟠 HIGH | PyPI API Token | `pypi-` + 64 chars |
+| `databricks.token` | 🟠 HIGH | Databricks Personal Token | `dapi` + 32 hex chars |
+| `hashicorp.vault_token` | 🟠 HIGH | HashiCorp Vault Service Token | `hvs.` + 24 chars |
 | `jwt` | 🟡 MEDIUM | JSON Web Token | `eyJ...eyJ...` (3-part) |
 
 ### Severity Levels Explained
@@ -1502,11 +1515,11 @@ Sometimes you have known test fixtures or documentation examples that look like 
 ```toml
 # .pipewarden.toml
 [secrets]
-# Skip specific files or folders
+# Skip specific files or folders — supports ** glob (like gitignore)
 allowlist_paths = [
-    "tests/fixtures/**",
-    "docs/examples/**",
-    "*.md",
+    "tests/fixtures/**",   # everything under tests/fixtures/
+    "docs/examples/**",   # everything under docs/examples/
+    "*.md",               # all markdown files at root
 ]
 
 # Skip a specific rule everywhere
@@ -1515,6 +1528,8 @@ allowlist_rules = ["jwt"]
 # Ignore a specific known-safe string (e.g. AWS docs example key)
 allowlist_strings = ["AKIAIOSFODNN7EXAMPLE"]
 ```
+
+> **`**` glob patterns work correctly.** `tests/fixtures/**` matches `tests/fixtures/api_keys.py`, `tests/fixtures/sub/data.json`, etc. This uses a full gitignore-compatible glob compiler — not plain `fnmatch`.
 
 ### What Is NOT Scanned
 
@@ -1587,7 +1602,8 @@ Exit Code  Meaning
     0      Everything passed (or was skipped).
            CI should go green. Safe to merge / deploy.
 
-    1      One or more stages failed.
+    1      One or more non-secrets stages failed
+           (test failure, build error, lint error, etc.).
            CI should go red. Block the merge. Fix the issue.
 
     2      Bad CLI usage (unknown flag, invalid argument).
@@ -1596,15 +1612,29 @@ Exit Code  Meaning
     3      Bad .pipewarden.toml file (unknown key, wrong type).
            Fix your config file.
 
+    4      The secrets stage specifically found exposed credentials.
+           Rotate the secret immediately. Assume it is compromised.
+           In CI scripts, check for exit code 4 to trigger an alert.
+
   130      Interrupted (Ctrl-C).
            The run was cancelled mid-flight.
 ```
 
+**Why is there a separate exit code for secrets?** This lets CI scripts distinguish "a test failed" (code 1) from "a credential was leaked" (code 4) and trigger different responses — for example, paging an on-call security engineer only for code 4:
+
+```bash
+pipewarden
+exit_code=$?
+if [ $exit_code -eq 4 ]; then
+  echo "🚨 CREDENTIAL LEAK DETECTED — paging security" | slack-notify
+fi
+```
+
 ---
 
-## 📄 Reports — SARIF, JUnit XML, JSON
+## 📄 Reports — SARIF, JUnit XML, JSON, Markdown
 
-Pipewarden can generate three machine-readable report formats simultaneously. These are designed to integrate with the dashboards and UIs your team already uses.
+Pipewarden can generate four machine-readable report formats simultaneously. These are designed to integrate with the dashboards and UIs your team already uses.
 
 ### SARIF — Security Findings in GitHub / Azure DevOps
 
@@ -1697,6 +1727,35 @@ Use this for:
 - Building a custom quality dashboard
 - Automated triage scripts
 
+### Markdown Summary — For GitHub Step Summaries
+
+```bash
+pipewarden --markdown-out summary.md
+# or pipe directly to GitHub's step summary:
+pipewarden --markdown-out "$GITHUB_STEP_SUMMARY"
+```
+
+Produces a rich Markdown table showing every step's status, duration, and all findings. When written to `$GITHUB_STEP_SUMMARY` in GitHub Actions, it appears as a formatted panel on the workflow run page — no extra upload step needed.
+
+```yaml
+- name: Run Pipewarden
+  run: pipewarden --markdown-out "$GITHUB_STEP_SUMMARY" --sarif-out report.sarif
+```
+
+### GitHub Actions Inline Annotations — PR Diff Comments
+
+```bash
+pipewarden --gh-annotations
+```
+
+Prints GitHub Actions workflow commands to stdout. The runner picks them up and shows findings as **inline comments directly on the PR diff** — exactly where the secret or issue was introduced:
+
+```
+::error file=src/config.py,line=14,col=7,title=aws.access_key::possible aws.access_key
+```
+
+No extra upload. No separate action. The annotations appear immediately on the changed lines.
+
 ---
 
 ## 🔧 Configuration Reference
@@ -1778,6 +1837,15 @@ allowlist_strings = [
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# RETRY (for flaky network-dependent steps)
+# Applies to: pip install, npm ci, cargo fetch, go mod download, pip-audit…
+# ─────────────────────────────────────────────────────────────────────────────
+[retry]
+attempts     = 0    # 0 = disabled. Max 5. Retries on transient failures only.
+backoff_base = 2.0  # Seconds before first retry; doubles each attempt (2s, 4s, 8s…)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # OUTPUT
 # ─────────────────────────────────────────────────────────────────────────────
 [output]
@@ -1794,6 +1862,40 @@ config error: unknown key: pipewarden.stagess
 ```
 
 This is intentional — typos fail loudly rather than being silently ignored.
+
+---
+
+## 🌐 Environment Variable Overrides
+
+You can override any configuration value with a `PIPEWARDEN_*` environment variable. This is useful in CI systems where you cannot edit the TOML file.
+
+**Priority order (highest wins):** CLI flags > env vars > `.pipewarden.toml` > built-in defaults.
+
+| Environment Variable | Equivalent Config | Example |
+|---------------------|-------------------|---------|
+| `PIPEWARDEN_FAIL_FAST=1` | `fail_fast = true` | Stop on first failure |
+| `PIPEWARDEN_SKIP=docker,vulns` | `skip = ["docker", "vulns"]` | Skip stages by name |
+| `PIPEWARDEN_ONLY=secrets,python` | `only = ["secrets", "python"]` | Run only these stages |
+| `PIPEWARDEN_TIMEOUT_TEST_S=2400` | `timeouts.test_s = 2400` | 40-min test timeout |
+| `PIPEWARDEN_TIMEOUT_INSTALL_S=1800` | `timeouts.install_s = 1800` | 30-min install timeout |
+| `PIPEWARDEN_TIMEOUT_BUILD_S=1200` | `timeouts.build_s = 1200` | 20-min build timeout |
+| `PIPEWARDEN_TIMEOUT_SCAN_S=300` | `timeouts.scan_s = 300` | 5-min scan timeout |
+| `PIPEWARDEN_TIMEOUT_DEFAULT_S=300` | `timeouts.default_s = 300` | 5-min default timeout |
+| `PIPEWARDEN_NO_COLOR=1` | `output.color = false` | Disable ANSI colours |
+| `PIPEWARDEN_QUIET=1` | `output.quiet = true` | Suppress pretty output |
+| `PIPEWARDEN_RETRY_ATTEMPTS=3` | `retry.attempts = 3` | Retry up to 3 times |
+| `PIPEWARDEN_RETRY_BACKOFF=5` | `retry.backoff_base = 5.0` | 5-second initial backoff |
+
+**Example — GitHub Actions with env var overrides:**
+
+```yaml
+- name: Run Pipewarden
+  env:
+    PIPEWARDEN_SKIP: docker       # No Docker daemon on this runner
+    PIPEWARDEN_RETRY_ATTEMPTS: 3  # Retry flaky network steps
+    PIPEWARDEN_TIMEOUT_TEST_S: 3600
+  run: pipewarden --sarif-out report.sarif
+```
 
 ---
 
@@ -2050,13 +2152,21 @@ OPTIONS
   --diff REF           Restrict secret scan to files changed vs REF
                        Example: --diff origin/main
   --fail-fast          Stop immediately on the first failure
+  --dry-run            Show which stages would run without executing anything
+
+  --init               Scaffold a .pipewarden.toml in the project root and exit
+  --validate           Validate the config file and exit (0 = valid, 3 = error)
+  --list-stages        Show which stages are detected and enabled, then exit
 
   --json               Output JSON report to stdout (no pretty output)
   --sarif-out FILE     Write SARIF 2.1 report (for GitHub Code Scanning)
   --junit-out FILE     Write JUnit XML report (for CI test parsers)
+  --markdown-out FILE  Write Markdown summary (use $GITHUB_STEP_SUMMARY for GHA)
+  --gh-annotations     Print GitHub Actions inline annotations to stdout
   --log-file FILE      Write verbose debug log to FILE
   --no-color           Disable ANSI colours (for dumb terminals / file output)
   --verbose / -v       Enable verbose logging to stderr
+  --docker-tag TAG     Override the Docker image tag for the docker stage
 
   --version            Print version and exit
   --help               Show this help and exit
@@ -2099,8 +2209,26 @@ pipewarden --only secrets --diff origin/main
 # Stop on first failure (tight feedback loop)
 pipewarden --fail-fast
 
+# Preview what would run without executing anything
+pipewarden --dry-run
+
+# Scaffold a .pipewarden.toml in the current directory
+pipewarden --init
+
+# Validate config file and exit
+pipewarden --validate
+
+# List detected and enabled stages
+pipewarden --list-stages
+
 # Generate all reports
-pipewarden --sarif-out findings.sarif --junit-out results.xml --json > report.json
+pipewarden --sarif-out findings.sarif --junit-out results.xml
+
+# Write GitHub Actions step summary
+pipewarden --markdown-out "$GITHUB_STEP_SUMMARY"
+
+# Print inline PR annotations (GitHub Actions only)
+pipewarden --gh-annotations
 
 # Run against a specific directory
 pipewarden --root /path/to/my-project

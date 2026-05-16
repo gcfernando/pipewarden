@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -16,6 +17,31 @@ from .config import PipelineConfig
 from .detect import Detection
 from .runner import run_cmd
 from .types import Status, StepResult
+
+
+def _retry_kw(cfg: PipelineConfig) -> dict[str, object]:
+    """Return retry kwargs for network-heavy run_cmd calls."""
+    return {"retries": cfg.retry.attempts, "backoff_base": cfg.retry.backoff_base}
+
+
+def _in_ci() -> bool:
+    """Return True when running inside a known CI environment."""
+    return any(os.environ.get(v) for v in ("CI", "GITHUB_ACTIONS", "GITLAB_CI", "TF_BUILD"))
+
+
+def _docker_daemon_available() -> bool:
+    """Return True if the Docker CLI is present and the daemon is responding."""
+    if shutil.which("docker") is None:
+        return False
+    try:
+        return subprocess.run(
+            ["docker", "info"],
+            capture_output=True,
+            timeout=10,
+        ).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
 
 # ---------------------------------------------------------------------------
 # Python
@@ -77,7 +103,7 @@ def run_python(root: Path, d: Detection, cfg: PipelineConfig,
         return
 
     r = run_cmd(cmd, cwd=root, name=step_name,
-                timeout=cfg.timeouts.install_s, required=True)
+                timeout=cfg.timeouts.install_s, required=True, **_retry_kw(cfg))
     results.append(r)
     if r.is_failure():
         return
@@ -142,7 +168,7 @@ def run_node(root: Path, d: Detection, cfg: PipelineConfig,
         install_cmd = ["npm", "ci"] if d.has_package_lock else ["npm", "install"]
 
     r = run_cmd(install_cmd, cwd=root, name=f"node:deps({pm})",
-                timeout=cfg.timeouts.install_s, required=True)
+                timeout=cfg.timeouts.install_s, required=True, **_retry_kw(cfg))
     results.append(r)
     if r.is_failure():
         return
@@ -166,7 +192,7 @@ def run_node(root: Path, d: Detection, cfg: PipelineConfig,
 def run_dotnet(root: Path, _d: Detection, cfg: PipelineConfig,
                results: list[StepResult]) -> None:
     r = run_cmd(["dotnet", "restore"], cwd=root, name="dotnet:restore",
-                timeout=cfg.timeouts.install_s, required=True)
+                timeout=cfg.timeouts.install_s, required=True, **_retry_kw(cfg))
     results.append(r)
     if r.is_failure():
         return
@@ -183,7 +209,8 @@ def run_dotnet(root: Path, _d: Detection, cfg: PipelineConfig,
 def run_go(root: Path, _d: Detection, cfg: PipelineConfig,
            results: list[StepResult]) -> None:
     results.append(run_cmd(["go", "mod", "download"], cwd=root, name="go:deps",
-                           timeout=cfg.timeouts.install_s, required=True))
+                           timeout=cfg.timeouts.install_s, required=True,
+                           **_retry_kw(cfg)))
     if results[-1].is_failure():
         return
     results.append(run_cmd(["go", "vet", "./..."], cwd=root, name="go:vet",
@@ -197,7 +224,8 @@ def run_go(root: Path, _d: Detection, cfg: PipelineConfig,
 def run_rust(root: Path, _d: Detection, cfg: PipelineConfig,
              results: list[StepResult]) -> None:
     results.append(run_cmd(["cargo", "fetch"], cwd=root, name="rust:deps",
-                           timeout=cfg.timeouts.install_s, required=True))
+                           timeout=cfg.timeouts.install_s, required=True,
+                           **_retry_kw(cfg)))
     if results[-1].is_failure():
         return
     if shutil.which("cargo-clippy"):
@@ -224,6 +252,18 @@ def run_docker(root: Path, d: Detection, cfg: PipelineConfig,
         results.append(run_cmd(["hadolint", dockerfile], cwd=root,
                                name="docker:lint(hadolint)",
                                timeout=cfg.timeouts.default_s, required=True))
+
+    if not _docker_daemon_available():
+        # In CI environments Docker is often intentionally absent (e.g. when
+        # running in a rootless container). Downgrade to a warning so the
+        # overall run isn't marked as failed just because the daemon is absent.
+        status = Status.WARNED if _in_ci() else Status.FAILED
+        msg = "Docker daemon not available"
+        if _in_ci():
+            msg += " — skipping build (CI environment without Docker socket)"
+        results.append(StepResult(name="docker:build", status=status, message=msg))
+        return
+
     results.append(run_cmd(
         ["docker", "build", "-t", cfg.docker_tag, "-f", dockerfile, "."],
         cwd=root, name="docker:build", timeout=cfg.timeouts.build_s, required=True))
@@ -243,22 +283,26 @@ def run_vulns(root: Path, d: Detection, cfg: PipelineConfig,
     if d.python and shutil.which("pip-audit"):
         results.append(run_cmd(["pip-audit", "--strict"], cwd=root,
                                name="vulns:pip-audit",
-                               timeout=cfg.timeouts.scan_s, required=False))
+                               timeout=cfg.timeouts.scan_s, required=False,
+                               **_retry_kw(cfg)))
         any_ran = True
     if d.node and shutil.which("npm"):
         results.append(run_cmd(
             ["npm", "audit", "--audit-level=high", "--omit=dev"],
             cwd=root, name="vulns:npm-audit",
-            timeout=cfg.timeouts.scan_s, required=False))
+            timeout=cfg.timeouts.scan_s, required=False,
+            **_retry_kw(cfg)))
         any_ran = True
     if d.rust and shutil.which("cargo-audit"):
         results.append(run_cmd(["cargo", "audit"], cwd=root, name="vulns:cargo-audit",
-                               timeout=cfg.timeouts.scan_s, required=False))
+                               timeout=cfg.timeouts.scan_s, required=False,
+                               **_retry_kw(cfg)))
         any_ran = True
     if d.go and shutil.which("govulncheck"):
         results.append(run_cmd(["govulncheck", "./..."], cwd=root,
                                name="vulns:govulncheck",
-                               timeout=cfg.timeouts.scan_s, required=False))
+                               timeout=cfg.timeouts.scan_s, required=False,
+                               **_retry_kw(cfg)))
         any_ran = True
     if not any_ran:
         results.append(StepResult(name="vulns", status=Status.SKIPPED,

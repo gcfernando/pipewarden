@@ -26,7 +26,7 @@ All three must pass before a PR is merged. CI enforces this.
 - **No new runtime dependencies.** The single-binary-no-deps story is the product. If you really need a dep, open an issue first.
 - **Tests for new behavior.** Bugs get a regression test that fails before your fix and passes after.
 - **Subprocess discipline.** Never call `subprocess` outside `runner.py`. Never use `shell=True`. Every command takes a timeout.
-- **Stable exit codes.** Don't change them without a major version bump.
+- **Stable exit codes.** Don't change them without a major version bump. Current codes: 0 (ok), 1 (non-secrets failure), 2 (usage), 3 (config), 4 (secrets found), 130 (interrupted).
 - **Type hints everywhere.** `mypy --strict` must pass.
 
 ## Releasing

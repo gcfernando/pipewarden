@@ -50,6 +50,8 @@ class CallRecorder:
         required: bool = True,
         stream: bool = True,
         indent: str = "   ",
+        retries: int = 0,
+        backoff_base: float = 2.0,
     ) -> StepResult:
         self.calls.append({"cmd": list(cmd), "name": name, "timeout": timeout,
                            "required": required})

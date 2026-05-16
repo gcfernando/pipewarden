@@ -7,6 +7,7 @@ Config sources, in precedence order (later wins):
 """
 from __future__ import annotations
 
+import os
 import sys
 from dataclasses import dataclass, field, fields
 from pathlib import Path
@@ -68,6 +69,12 @@ class OutputConfig:
 
 
 @dataclass
+class RetryConfig:
+    attempts: int = 0          # 0 = disabled; capped at 5 by validate()
+    backoff_base: float = 2.0  # seconds before first retry; doubles each attempt
+
+
+@dataclass
 class PipelineConfig:
     """Top-level config."""
     fail_fast: bool = False
@@ -78,6 +85,7 @@ class PipelineConfig:
     secrets: SecretsConfig = field(default_factory=SecretsConfig)
     timeouts: TimeoutsConfig = field(default_factory=TimeoutsConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
+    retry: RetryConfig = field(default_factory=RetryConfig)
 
     def validate(self) -> None:
         """Raise ConfigError on invalid combinations."""
@@ -95,6 +103,10 @@ class PipelineConfig:
             raise ConfigError("secrets.max_file_bytes must be positive")
         if self.secrets.max_files <= 0:
             raise ConfigError("secrets.max_files must be positive")
+        if not 0 <= self.retry.attempts <= 5:
+            raise ConfigError("retry.attempts must be between 0 and 5")
+        if self.retry.backoff_base <= 0:
+            raise ConfigError("retry.backoff_base must be a positive number")
 
 
 # ---------------------------------------------------------------------------
@@ -153,3 +165,59 @@ def load_config(path: Path | None) -> PipelineConfig:
     _coerce_into(cfg, data, "pipewarden")
     cfg.validate()
     return cfg
+
+
+# ---------------------------------------------------------------------------
+# Environment variable overrides
+# Priority: CLI flags > env vars > .toml file > built-in defaults
+# ---------------------------------------------------------------------------
+
+_TRUTHY = frozenset({"1", "true", "yes", "on"})
+
+
+def apply_env_overrides(cfg: PipelineConfig) -> None:
+    """Overlay PIPEWARDEN_* environment variables onto a loaded config.
+
+    Call this after load_config() and before merge_cli_into_config() so that
+    CLI flags still take final precedence.
+    """
+    env = os.environ
+
+    if env.get("PIPEWARDEN_FAIL_FAST", "").strip().lower() in _TRUTHY:
+        cfg.fail_fast = True
+
+    if raw := env.get("PIPEWARDEN_SKIP", "").strip():
+        cfg.skip = [s.strip() for s in raw.split(",") if s.strip()]
+
+    if raw := env.get("PIPEWARDEN_ONLY", "").strip():
+        cfg.only = [s.strip() for s in raw.split(",") if s.strip()]
+
+    for tname in ("install_s", "build_s", "test_s", "scan_s", "default_s"):
+        key = f"PIPEWARDEN_TIMEOUT_{tname.upper()}"
+        if raw := env.get(key, "").strip():
+            try:
+                setattr(cfg.timeouts, tname, int(raw))
+            except ValueError:
+                raise ConfigError(f"{key} must be an integer, got {raw!r}") from None
+
+    if env.get("PIPEWARDEN_NO_COLOR", "").strip().lower() in _TRUTHY:
+        cfg.output.color = False
+
+    if env.get("PIPEWARDEN_QUIET", "").strip().lower() in _TRUTHY:
+        cfg.output.quiet = True
+
+    if raw := env.get("PIPEWARDEN_RETRY_ATTEMPTS", "").strip():
+        try:
+            cfg.retry.attempts = int(raw)
+        except ValueError:
+            raise ConfigError(
+                f"PIPEWARDEN_RETRY_ATTEMPTS must be an integer, got {raw!r}"
+            ) from None
+
+    if raw := env.get("PIPEWARDEN_RETRY_BACKOFF", "").strip():
+        try:
+            cfg.retry.backoff_base = float(raw)
+        except ValueError:
+            raise ConfigError(
+                f"PIPEWARDEN_RETRY_BACKOFF must be a number, got {raw!r}"
+            ) from None

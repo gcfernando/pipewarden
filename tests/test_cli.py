@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from pipewarden.cli import main
+from pipewarden.cli import EXIT_SECRETS, main
 
 
 def test_help_runs(capsys: pytest.CaptureFixture[str]) -> None:
@@ -50,7 +50,7 @@ def test_json_output_on_empty(tmp_path: Path,
 def test_secret_leak_fails(tmp_path: Path) -> None:
     (tmp_path / "leak.py").write_text("KEY='AKIAIOSFODNN7EXAMPLE'\n")
     rc = main(["--root", str(tmp_path), "--no-color"])
-    assert rc == 1
+    assert rc == EXIT_SECRETS
 
 
 def test_skip_disables_stage(tmp_path: Path) -> None:
@@ -64,7 +64,7 @@ def test_sarif_output_written(tmp_path: Path) -> None:
     (tmp_path / "leak.py").write_text("KEY='AKIAIOSFODNN7EXAMPLE'\n")
     sarif_path = tmp_path / "out.sarif"
     rc = main(["--root", str(tmp_path), "--sarif-out", str(sarif_path)])
-    assert rc == 1
+    assert rc == EXIT_SECRETS
     data = json.loads(sarif_path.read_text())
     assert data["version"] == "2.1.0"
     assert data["runs"][0]["results"]  # at least one finding
@@ -118,4 +118,4 @@ def test_diff_mode_scopes_to_changed_files(tmp_path: Path) -> None:
     (tmp_path / "leak.py").write_text("KEY='AKIAIOSFODNN7EXAMPLE'\n")
 
     rc = main(["--root", str(tmp_path), "--diff", "HEAD", "--no-color"])
-    assert rc == 1  # the leak in the untracked file should be found
+    assert rc == EXIT_SECRETS  # the leak in the untracked file should be found

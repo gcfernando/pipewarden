@@ -1,6 +1,7 @@
 """Report serializers. Pure functions: take a Report, produce a string/dict."""
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import Any
 from xml.etree import ElementTree as ET
@@ -29,6 +30,11 @@ _SARIF_LEVEL = {
 }
 
 
+def _fingerprint(rule_id: str, file: str, line: int) -> str:
+    """SHA-256 fingerprint used by GitHub Code Scanning to deduplicate findings."""
+    return hashlib.sha256(f"{rule_id}|{file}|{line}".encode()).hexdigest()
+
+
 def to_sarif(report: Report) -> str:
     """Emit a SARIF document covering all findings across steps."""
     rules: dict[str, dict[str, Any]] = {}
@@ -46,6 +52,9 @@ def to_sarif(report: Report) -> str:
                 "ruleId": f.rule_id,
                 "level": _SARIF_LEVEL.get(f.severity, "warning"),
                 "message": {"text": f.message},
+                "fingerprints": {
+                    "primaryLocationLineHash/v1": _fingerprint(f.rule_id, f.file, f.line),
+                },
                 "locations": [{
                     "physicalLocation": {
                         "artifactLocation": {"uri": f.file},
@@ -111,7 +120,7 @@ def to_junit_xml(report: Report) -> str:
         if s.status == Status.FAILED:
             fail = ET.SubElement(case, "failure", {
                 "message": s.message or "step failed",
-                "type": "PipelineGuardFailure",
+                "type": "PipewarnedFailure",
             })
             fail.text = s.stdout_tail or s.message
         elif s.status == Status.SKIPPED:
@@ -123,3 +132,105 @@ def to_junit_xml(report: Report) -> str:
 
     # ET.tostring returns bytes by default; we want a string.
     return ET.tostring(testsuites, encoding="unicode")
+
+
+# ---------------------------------------------------------------------------
+# GitHub Actions annotations — printed to stdout, picked up by the runner.
+# Format: ::error file={f},line={l},col={c},title={t}::{message}
+# ---------------------------------------------------------------------------
+
+def to_github_annotations(report: Report) -> str:
+    """Return GitHub Actions workflow commands for every finding.
+
+    Print the result to stdout during a workflow step and GitHub will surface
+    inline annotations on the PR diff.
+    """
+    lines: list[str] = []
+    for step in report.steps:
+        for f in step.findings:
+            level = "error" if f.severity in (Severity.CRITICAL, Severity.HIGH) else "warning"
+            # Encode special characters per the GHA annotation spec.
+            msg = (f.message
+                   .replace("%", "%25")
+                   .replace("\r", "%0D")
+                   .replace("\n", "%0A")
+                   .replace(":", "%3A")
+                   .replace(",", "%2C"))
+            lines.append(
+                f"::{level} file={f.file},line={f.line},"
+                f"col={f.column},title={f.rule_id}::{msg}"
+            )
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Markdown summary — for $GITHUB_STEP_SUMMARY or local --markdown-out.
+# ---------------------------------------------------------------------------
+
+_STATUS_ICON = {
+    Status.PASSED:  "✅",
+    Status.FAILED:  "❌",
+    Status.WARNED:  "⚠️",
+    Status.SKIPPED: "⏭️",
+}
+
+_SEVERITY_ICON = {
+    Severity.CRITICAL: "🔴",
+    Severity.HIGH:     "🟠",
+    Severity.MEDIUM:   "🟡",
+    Severity.LOW:      "🔵",
+    Severity.INFO:     "⚪",
+}
+
+# Max findings rows to include before truncating (keeps summary under GHA 1 MiB limit).
+_MAX_FINDING_ROWS = 100
+
+
+def to_markdown_summary(report: Report) -> str:
+    """Produce a Markdown summary suitable for $GITHUB_STEP_SUMMARY or a file."""
+    has_failures = any(s.status == Status.FAILED for s in report.steps)
+    header_icon = "❌" if has_failures else "✅"
+
+    lines: list[str] = [
+        f"## {header_icon} Pipewarden {report.tool_version}",
+        "",
+        f"**Root:** `{report.root}`   **Duration:** {report.duration_s:.1f}s",
+        "",
+        "| Stage | Status | Duration | Details |",
+        "|-------|--------|----------|---------|",
+    ]
+
+    for s in report.steps:
+        icon = _STATUS_ICON.get(s.status, "•")
+        msg = (s.message or "").replace("|", "\\|")
+        dur = f"{s.duration_s:.1f}s" if s.duration_s else "—"
+        lines.append(f"| `{s.name}` | {icon} {s.status.name} | {dur} | {msg} |")
+
+    # Findings table
+    all_findings = [f for s in report.steps for f in s.findings]
+    if all_findings:
+        truncated = len(all_findings) > _MAX_FINDING_ROWS
+        shown = all_findings[:_MAX_FINDING_ROWS]
+        lines += [
+            "",
+            "### Findings",
+            "",
+            "| Severity | Rule | File | Line | Message |",
+            "|----------|------|------|------|---------|",
+        ]
+        for f in shown:
+            sev_icon = _SEVERITY_ICON.get(f.severity, "")
+            file_col = f.file.replace("|", "\\|")
+            msg_col = f.message.replace("|", "\\|")
+            lines.append(
+                f"| {sev_icon} {f.severity.name} | `{f.rule_id}` "
+                f"| `{file_col}` | {f.line} | {msg_col} |"
+            )
+        if truncated:
+            lines.append(
+                f"\n> ⚠️ Showing {_MAX_FINDING_ROWS} of {len(all_findings)} findings. "
+                "Use `--sarif-out` to export the full list."
+            )
+
+    lines.append("")
+    return "\n".join(lines)
