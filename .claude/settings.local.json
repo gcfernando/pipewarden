@@ -31,7 +31,11 @@
       "Bash(python -m pipewarden --root . --skip vulns --only secrets --no-color)",
       "Bash(python -m pytest tests/ -x -q --no-header --tb=short)",
       "Bash(python -m pipewarden --root . --only secrets --no-color)",
-      "Bash(python -m pytest tests/ --no-header -q)"
+      "Bash(python -m pytest tests/ --no-header -q)",
+      "Bash(python -m pipewarden --only secrets)",
+      "Bash(python -m pytest -q --tb=short)",
+      "Bash(python -m pytest)",
+      "Bash(python -m pipewarden --version)"
     ]
   }
 }

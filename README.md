@@ -13,7 +13,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.10%20|%203.11%20|%203.12%20|%203.13-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-D22128?style=for-the-badge)](LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-73%20Passing-2EA44F?style=for-the-badge&logo=checkmarx&logoColor=white)](#)
+[![Tests](https://img.shields.io/badge/Tests-160%20Passing-2EA44F?style=for-the-badge&logo=checkmarx&logoColor=white)](#)
 [![Coverage](https://img.shields.io/badge/Coverage-80%25%2B-2EA44F?style=for-the-badge)](#)
 [![Mypy](https://img.shields.io/badge/Mypy-Strict-1F5082?style=for-the-badge&logo=python&logoColor=white)](#)
 [![Platforms](https://img.shields.io/badge/Platforms-Linux%20|%20macOS%20|%20Windows-555555?style=for-the-badge)](#)
@@ -133,7 +133,7 @@ Here is what a real run looks like on a Python + Node + Docker project:
 $ pipewarden
 
 ════════════════════════════════════════════════════════════════
-  Pipewarden 1.0.0
+  Pipewarden 1.2.0
 ════════════════════════════════════════════════════════════════
   root:     /home/alice/my-app
   config:   (defaults — no config file found)
@@ -224,13 +224,13 @@ Verify the installation:
 
 ```bash
 pipewarden --version
-# → pipewarden 1.0.0
+# → pipewarden 1.2.0
 ```
 
 ### Option 2 — Install from Source
 
 ```bash
-pip install git+https://github.com/gcfernando/pipewarden.git@v1.0.0
+pip install git+https://github.com/gcfernando/pipewarden.git@v1.2.0
 ```
 
 ### Option 3 — Docker
@@ -2156,7 +2156,7 @@ Catch issues **before** code even reaches the remote repository by wiring Pipewa
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/gcfernando/pipewarden
-    rev: v1.0.0
+    rev: v1.2.0
     hooks:
       - id: pipewarden-secrets     # Runs on every git commit
       - id: pipewarden-diff        # Runs on every git push (changed files only)

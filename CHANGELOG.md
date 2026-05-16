@@ -4,6 +4,31 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] — 2026-05-17
+
+### Added
+
+- **24 new secret patterns** — 46 total (up from 22 in 1.1.0), organised into 9 categories:
+  - **Database URIs** — `postgres.connection_string`, `mysql.connection_string`, `redis.connection_string`, `amqp.connection_string`
+  - **SQL / JDBC** — `mssql.connection_string` (SQL Server ADO.NET key=value format with negative lookahead to skip Windows Integrated Security), `jdbc.connection_string` (JDBC URL `password=` parameter)
+  - **Azure** — `azure.storage_connection_string` (`DefaultEndpointsProtocol=…;AccountKey=…`), `azure.cosmos_connection_string` (`AccountEndpoint=…;AccountKey=…`), `azure.servicebus_connection_string` (`Endpoint=sb://…;SharedAccessKey=…`)
+  - **AWS** — `aws.sts_key` (STS/AssumeRole temporary credentials, `ASIA` prefix)
+  - **Developer platforms** — `digitalocean.token` (`dop_v1_`), `github.actions_token` (`ghs_`), `github.user_token` (`ghu_`), `linear.api_key` (`lin_api_`), `okta.token` (`SSWS `)
+  - **AI / ML** — `huggingface.token` (`hf_`), `replicate.token` (`r8_`)
+  - **Communication** — `telegram.bot_token` (`numeric_id:AA…`)
+  - **Payment** — `stripe.test_key` (`sk_test_`), `stripe.webhook_secret` (`whsec_`)
+  - **E-commerce** — `shopify.access_token` (`shpat_`), `shopify.storefront_token` (`shpss_`), `shopify.custom_app_token` (`shpca_`)
+  - **Observability** — `newrelic.license_key` (`NRAK-`)
+
+### Fixed
+
+- **Self-scan false positive** — `.pipewarden.toml` is now always excluded from secret scanning via `allowlist_paths`; the config file's own `allowlist_strings` entries can match secret patterns, causing a loop
+- **README documentation examples** — connection string examples in docs are now written in split form (e.g. `` `mongodb://HOST/DB` ``) so the scanner's `[^:@\s]` stop-at-whitespace rule cannot match across a documentation line
+
+### Changed
+
+- Test suite expanded from 73 to **160 tests** (+87); coverage ≥ 85 %
+
 ## [1.1.0] — 2026-05-17
 
 ### Added
