@@ -258,7 +258,7 @@ Pipewarden always runs stages in this order. Each stage only runs if the relevan
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    Pipewarden FLOW                          │
+│                    Pipewarden FLOW                              │
 ├──────────┬──────────────────────────────────────────────────────┤
 │ Stage 1  │  DETECT                                              │
 │          │  Reads the project folder. Identifies which          │
@@ -1121,7 +1121,7 @@ Failing step output (tail):
     Assert.Equal() Failure: Values differ
     Expected: 404
     Actual:   200
-    
+
 Failed!  - Failed:     1, Passed:    47, Skipped:     0, Total:    48, Duration: 8.1s
 ```
 
@@ -1487,7 +1487,7 @@ gitleaks installed?
 | `anthropic.api_key` | 🔴 CRITICAL | Anthropic API Key | `sk-ant-` + 40 chars |
 | `openai.api_key` | 🔴 CRITICAL | OpenAI API Key (classic) | `sk-` + 48 chars |
 | `openai.api_key_project` | 🔴 CRITICAL | OpenAI Project API Key | `sk-proj-` + 100 chars |
-| `mongodb.connection_string` | 🔴 CRITICAL | MongoDB Connection URI | `mongodb://user:pass@host` |
+| `mongodb.connection_string` | 🔴 CRITICAL | MongoDB Connection URI | `mongodb://HOST/DB` (with credentials) |
 | `slack.token` | 🟠 HIGH | Slack Bot/App Token | `xox[abprs]-...` |
 | `twilio.account_sid` | 🟠 HIGH | Twilio Account SID | `AC` + 32 hex chars |
 | `sendgrid.api_key` | 🟠 HIGH | SendGrid API Key | `SG.` + 22 chars + `.` + 43 chars |

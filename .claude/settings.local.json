@@ -27,7 +27,8 @@
       "Bash(python -m pytest tests/ --no-header)",
       "Bash(python -m pytest tests/ --cov=pipewarden --cov-report=term-missing --no-header -q)",
       "Bash(ruff check *)",
-      "Bash(python -m pytest tests/ --cov=pipewarden --cov-report=term --no-header -q)"
+      "Bash(python -m pytest tests/ --cov=pipewarden --cov-report=term --no-header -q)",
+      "Bash(python -m pipewarden --root . --skip vulns --only secrets --no-color)"
     ]
   }
 }
