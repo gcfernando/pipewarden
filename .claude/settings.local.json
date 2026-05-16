@@ -18,7 +18,9 @@
       "Bash(Get-ChildItem C:\\\\Gehan\\\\Projects\\\\Pipeline-Guard *)",
       "Bash(python -m ruff check src/pipewarden/cli.py --fix)",
       "Bash(python -m ruff check src/pipewarden/cli.py src/pipewarden/reporters.py)",
-      "Bash(python -m ruff check .)"
+      "Bash(python -m ruff check .)",
+      "Bash(python -m mypy src/pipewarden/stages.py)",
+      "Bash(python -m mypy .)"
     ]
   }
 }

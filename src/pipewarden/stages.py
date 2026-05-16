@@ -12,6 +12,7 @@ import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
+from typing import TypedDict
 
 from .config import PipelineConfig
 from .detect import Detection
@@ -19,7 +20,12 @@ from .runner import run_cmd
 from .types import Status, StepResult
 
 
-def _retry_kw(cfg: PipelineConfig) -> dict[str, object]:
+class _RetryKw(TypedDict):
+    retries: int
+    backoff_base: float
+
+
+def _retry_kw(cfg: PipelineConfig) -> _RetryKw:
     """Return retry kwargs for network-heavy run_cmd calls."""
     return {"retries": cfg.retry.attempts, "backoff_base": cfg.retry.backoff_base}
 
