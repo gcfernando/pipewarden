@@ -1,16 +1,53 @@
+# Project configuration for pipewarden.
+#
+# This single file drives everything: packaging (hatchling), the CLI entry
+# point, PyPI metadata, and all dev-tool settings (ruff, mypy, pytest,
+# coverage). Keeping it here avoids scattering config across setup.cfg,
+# tox.ini, .mypy.ini, and other legacy files.
+
+
+# =============================================================================
+# Build system
+#
+# Hatchling is a PEP 517 build backend. It reads package metadata from the
+# [project] table below and produces the sdist and wheel for PyPI.
+# =============================================================================
 [build-system]
-requires = ["hatchling>=1.18"]
+requires      = ["hatchling>=1.18"]
 build-backend = "hatchling.build"
 
+
+# =============================================================================
+# Package metadata
+# This is what PyPI, pip, and tooling display to end users.
+# =============================================================================
 [project]
-name = "pipewarden"
-version = "1.2.0"
+name        = "pipewarden"
+version     = "1.2.0"
 description = "Pipewarden — detect, install, lint, test, build, scan — locally or in CI. Free and open."
-readme = "README.md"
-license = { file = "LICENSE" }
+readme      = "README.md"
+license     = { file = "LICENSE" }
+
+# 3.10 is the minimum because we rely on match statements and the
+# structural pattern matching introduced in that release.
 requires-python = ">=3.10"
-authors = [{ name = "Gehan Fernando", email = "f.gehan@gmail.com" }]
-keywords = ["ci", "devops", "secret-scanning", "lint", "test", "build", "pipewarden"]
+
+authors = [
+    { name = "Gehan Fernando", email = "f.gehan@gmail.com" },
+]
+
+keywords = [
+    "ci",
+    "devops",
+    "secret-scanning",
+    "lint",
+    "test",
+    "build",
+    "pipewarden",
+]
+
+# PyPI classifiers control which filters and badges appear on the project page.
+# Keep these in sync with requires-python and the supported OS list above.
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
@@ -27,33 +64,62 @@ classifiers = [
     "Topic :: Software Development :: Testing",
     "Topic :: Security",
 ]
-# Zero runtime dependencies on purpose. The whole point is "drop into any CI."
+
+# Zero runtime dependencies on purpose.
+# The whole point of pipewarden is "drop it into any CI without preparation."
+# tomli is the only exception — it backfills the built-in tomllib module that
+# Python 3.11 introduced. On 3.11+ it is not installed at all.
 dependencies = [
-    'tomli>=2.0;python_version<"3.11"',
+    'tomli>=2.0; python_version < "3.11"',
 ]
 
+
+# =============================================================================
+# Optional dependency groups
+# Install with: pip install -e ".[dev]"
+# =============================================================================
 [project.optional-dependencies]
+
+# Everything needed to develop, lint, type-check, test, and build the package.
 dev = [
-    "pytest>=7.4",
-    "pytest-cov>=4.1",
-    "mypy>=1.7",
-    "ruff>=0.1.6",
-    "build>=1.0",
+    "pytest>=7.4",      # test runner
+    "pytest-cov>=4.1",  # coverage reporting and enforcement
+    "mypy>=1.7",        # static type checking (strict mode)
+    "ruff>=0.1.6",      # linter + import sorter
+    "build>=1.0",       # builds the sdist and wheel for local testing
 ]
 
+
+# =============================================================================
+# CLI entry point
+# Registers the `pipewarden` command when the package is installed.
+# =============================================================================
 [project.scripts]
 pipewarden = "pipewarden.cli:main"
 
+
+# =============================================================================
+# Project URLs
+# Shown on the PyPI page as quick-links. Keep these up to date with each
+# release so users can find the changelog and report issues easily.
+# =============================================================================
 [project.urls]
-Homepage = "https://github.com/gcfernando/pipewarden"
-Source   = "https://github.com/gcfernando/pipewarden"
-Issues   = "https://github.com/gcfernando/pipewarden/issues"
+Homepage  = "https://github.com/gcfernando/pipewarden"
+Source    = "https://github.com/gcfernando/pipewarden"
+Issues    = "https://github.com/gcfernando/pipewarden/issues"
 Changelog = "https://github.com/gcfernando/pipewarden/blob/main/CHANGELOG.md"
 
+
+# =============================================================================
+# Hatchling build targets
+# =============================================================================
 [tool.hatch.build.targets.wheel]
+# Only the importable package goes into the wheel — no tests or docs.
 packages = ["src/pipewarden"]
 
 [tool.hatch.build.targets.sdist]
+# The sdist includes everything a contributor needs to run tests and cut a
+# release from scratch: source, tests, docs, and this config file itself.
 include = [
     "src/pipewarden",
     "tests",
@@ -64,38 +130,74 @@ include = [
     "pyproject.toml",
 ]
 
-# ---------------------------------------------------------------------------
-# Tooling configuration
-# ---------------------------------------------------------------------------
+
+# =============================================================================
+# Ruff — linter and import sorter
+# =============================================================================
 [tool.ruff]
-line-length = 100
-target-version = "py310"
+line-length    = 100
+target-version = "py310"   # match requires-python minimum
 
 [tool.ruff.lint]
-# Conservative set — we eat our own dog food.
+# We eat our own dog food — the same rules that pipewarden enforces on
+# external projects are enforced on this codebase too.
+#
+#   E/W  — pycodestyle errors and warnings
+#   F    — pyflakes (unused imports, undefined names, etc.)
+#   I    — isort-compatible import ordering
+#   B    — flake8-bugbear (common bug patterns)
+#   UP   — pyupgrade (modernise syntax for the target Python version)
+#   SIM  — flake8-simplify (unnecessary complexity)
+#   RUF  — ruff-specific rules
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
-ignore = ["E501"]  # line-length is enforced by formatter
 
+# E501 (line too long) is skipped here because ruff's formatter already
+# wraps lines to the line-length limit above. Enforcing it twice is redundant.
+ignore = ["E501"]
+
+
+# =============================================================================
+# Mypy — static type checker
+# =============================================================================
 [tool.mypy]
-python_version = "3.10"
-strict = true
-warn_unused_ignores = true
-warn_redundant_casts = true
-files = ["src/pipewarden"]
+python_version       = "3.10"   # match requires-python minimum
+strict               = true     # enables all optional strictness flags
+warn_unused_ignores  = true     # catches stale `# type: ignore` comments
+warn_redundant_casts = true     # catches unnecessary cast() calls
+files                = ["src/pipewarden"]
 
+
+# =============================================================================
+# Pytest — test runner
+# =============================================================================
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+# -q           suppress per-test dots and show only failures (cleaner CI output)
+# --strict-markers  fail immediately if a test uses an undeclared marker
 addopts = "-q --strict-markers"
+
+# Treat all warnings as errors so deprecations are caught during development
+# rather than silently accumulating until they break a future Python version.
 filterwarnings = ["error"]
 
+
+# =============================================================================
+# Coverage — measurement and reporting
+# =============================================================================
 [tool.coverage.run]
 source = ["pipewarden"]
-branch = true
-omit = ["src/pipewarden/__main__.py"]
+branch = true   # measure branch coverage, not just line coverage
+omit   = ["src/pipewarden/__main__.py"]   # thin entry point; not worth testing
 
 [tool.coverage.report]
-fail_under = 80
-show_missing = true
+# The pipeline fails in CI if coverage drops below 80 %.
+# Raise this threshold as the test suite matures.
+fail_under   = 80
+show_missing = true   # print the uncovered line numbers in the terminal report
+
+# Patterns that are excluded from the coverage requirement.
+# These are structural lines that cannot be meaningfully tested in isolation.
 exclude_also = [
     "if __name__ == .__main__.:",
     "raise NotImplementedError",

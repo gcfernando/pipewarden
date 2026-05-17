@@ -1,56 +1,132 @@
+# GitHub composite action that installs pipewarden and runs it in any workflow.
+#
+# Usage — add this to any workflow step:
+#
+#   - name: Run Pipewarden
+#     uses: gcfernando/pipewarden@v1.3.0
+#     with:
+#       only: "secrets,python"        # optional: run specific stages only
+#       sarif-out: results.sarif      # optional: upload to GitHub Code Scanning
+#
+# All inputs are optional. With no inputs the action runs every stage that
+# pipewarden auto-detects in the repository root.
+
 name: "Pipewarden"
-description: "Detect, install, lint, test, build, scan — locally or in CI."
+description: "Detect, install, lint, test, build, and scan your project — locally or in CI."
 author: "Pipewarden contributors"
+
+# Shown in the GitHub Marketplace sidebar.
 branding:
   icon: "shield"
   color: "blue"
 
+# ---------------------------------------------------------------------------
+# Inputs
+# All inputs are optional — sensible defaults are provided for every field.
+# ---------------------------------------------------------------------------
 inputs:
+
   root:
-    description: "Project root to scan."
+    description: >
+      Path to the project root that pipewarden should scan.
+      Defaults to the repository root.
     required: false
     default: "."
+
   only:
-    description: "Comma-separated list of stages to run (e.g. 'secrets,python')."
-    required: false
-    default: ""
-  skip:
-    description: "Comma-separated list of stages to skip."
-    required: false
-    default: ""
-  fail-fast:
-    description: "Abort on first failure."
-    required: false
-    default: "false"
-  sarif-out:
-    description: "Path to write SARIF report to (for code-scanning upload)."
-    required: false
-    default: ""
-  junit-out:
-    description: "Path to write JUnit XML report to."
-    required: false
-    default: ""
-  diff:
-    description: "Restrict secret scan to files changed vs this ref."
-    required: false
-    default: ""
-  python-version:
-    description: "Python interpreter to use for pipewarden itself."
-    required: false
-    default: "3.12"
-  version:
-    description: "pipewarden version to install (e.g. '1.0.0'). Default: latest."
+    description: >
+      Comma-separated list of stages to run exclusively.
+      All other detected stages will be skipped.
+      Example: "secrets,python"
+      Leave empty to run all detected stages (default behaviour).
     required: false
     default: ""
 
+  skip:
+    description: >
+      Comma-separated list of stages to skip.
+      Useful when a stage is detected but cannot run in your CI environment
+      (e.g. skip: "docker" when no Docker daemon is available).
+    required: false
+    default: ""
+
+  fail-fast:
+    description: >
+      Set to "true" to stop the pipeline immediately after the first stage
+      failure instead of running all stages and reporting at the end.
+    required: false
+    default: "false"
+
+  sarif-out:
+    description: >
+      File path to write a SARIF 2.1 report to.
+      Pass this path to actions/upload-sarif to surface findings as inline
+      annotations in the GitHub Code Scanning tab and PR diff view.
+      Leave empty to skip SARIF output.
+    required: false
+    default: ""
+
+  junit-out:
+    description: >
+      File path to write a JUnit XML report to.
+      Most CI systems (GitHub Actions, Azure DevOps, Jenkins) can parse this
+      format and display per-stage pass/fail results in their test UIs.
+      Leave empty to skip JUnit output.
+    required: false
+    default: ""
+
+  diff:
+    description: >
+      Git ref to diff against when running the secrets stage.
+      Only files changed between this ref and HEAD will be scanned, which
+      makes the scan significantly faster on large repositories.
+      Example: "origin/main"
+      Leave empty to scan all files (default behaviour).
+    required: false
+    default: ""
+
+  python-version:
+    description: >
+      Python version used to install and run pipewarden itself.
+      This does not need to match the Python version your project targets —
+      pipewarden supports 3.10 and above.
+    required: false
+    default: "3.12"
+
+  version:
+    description: >
+      Specific pipewarden version to install (e.g. "1.3.0").
+      Pin this to a release tag in production workflows so a new pipewarden
+      release cannot unexpectedly change your pipeline behaviour.
+      Leave empty to always install the latest published release.
+    required: false
+    default: ""
+
+# ---------------------------------------------------------------------------
+# Implementation
+# This is a composite action — it runs as a series of shell steps rather
+# than inside a Docker container, so it works on ubuntu, macos, and windows.
+# ---------------------------------------------------------------------------
 runs:
   using: "composite"
   steps:
-    - name: Set up Python
+
+    # -------------------------------------------------------------------------
+    # Install the requested Python version.
+    # We use setup-python rather than assuming the runner has a suitable
+    # version pre-installed so the action works reliably across runner images.
+    # -------------------------------------------------------------------------
+    - name: Set up Python ${{ inputs.python-version }}
       uses: actions/setup-python@v5
       with:
         python-version: ${{ inputs.python-version }}
 
+    # -------------------------------------------------------------------------
+    # Install pipewarden from PyPI.
+    # If a specific version is requested we pin to it exactly; otherwise we
+    # install the latest release. --quiet suppresses the pip progress bar so
+    # the step log stays clean.
+    # -------------------------------------------------------------------------
     - name: Install pipewarden
       shell: bash
       run: |
@@ -60,25 +136,48 @@ runs:
           python -m pip install --quiet pipewarden
         fi
 
-    - name: Run pipewarden
+    # -------------------------------------------------------------------------
+    # Build the pipewarden argument list from the action inputs and run it.
+    #
+    # Why build args dynamically instead of passing them inline?
+    # Several inputs are optional and produce no flag when empty (e.g. --only,
+    # --diff). Appending conditionally to an array is the safest way to handle
+    # this without leaving stray empty-string arguments.
+    #
+    # --no-color is always set because CI log viewers render ANSI codes as
+    # literal escape characters rather than colours.
+    #
+    # set -euo pipefail ensures the step fails immediately if any command in
+    # the script exits with a non-zero code (e, u) or a pipe fails (pipefail).
+    # -------------------------------------------------------------------------
+    - name: Run Pipewarden
       shell: bash
       env:
-        ROOT: ${{ inputs.root }}
-        ONLY: ${{ inputs.only }}
-        SKIP: ${{ inputs.skip }}
+        ROOT:      ${{ inputs.root }}
+        ONLY:      ${{ inputs.only }}
+        SKIP:      ${{ inputs.skip }}
         FAIL_FAST: ${{ inputs.fail-fast }}
-        SARIF: ${{ inputs.sarif-out }}
-        JUNIT: ${{ inputs.junit-out }}
-        DIFF: ${{ inputs.diff }}
+        SARIF:     ${{ inputs.sarif-out }}
+        JUNIT:     ${{ inputs.junit-out }}
+        DIFF:      ${{ inputs.diff }}
       run: |
         set -euo pipefail
+
+        # Start with the mandatory flags that are always present.
         args=( "--root" "$ROOT" "--no-color" )
+
+        # Split comma-separated stage lists and append one --only / --skip
+        # flag per stage. IFS is restored afterwards to avoid leaking the
+        # change into subsequent commands.
         IFS=','
         for s in $ONLY; do args+=( "--only" "$s" ); done
         for s in $SKIP; do args+=( "--skip" "$s" ); done
         unset IFS
+
+        # Append optional flags only when their input is non-empty / truthy.
         [[ "$FAIL_FAST" == "true" ]] && args+=( "--fail-fast" )
-        [[ -n "$SARIF" ]] && args+=( "--sarif-out" "$SARIF" )
-        [[ -n "$JUNIT" ]] && args+=( "--junit-out" "$JUNIT" )
-        [[ -n "$DIFF"  ]] && args+=( "--diff" "$DIFF" )
+        [[ -n "$SARIF"            ]] && args+=( "--sarif-out" "$SARIF" )
+        [[ -n "$JUNIT"            ]] && args+=( "--junit-out" "$JUNIT" )
+        [[ -n "$DIFF"             ]] && args+=( "--diff"      "$DIFF"  )
+
         pipewarden "${args[@]}"

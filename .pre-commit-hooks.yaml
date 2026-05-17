@@ -1,34 +1,100 @@
-# Allow consumers to use this repo as a pre-commit hook source:
+# yaml-language-server: $schema=https://json.schemastore.org/pre-commit-hooks.json
+
+# Pre-commit hook definitions for pipewarden.
 #
-#   - repo: https://github.com/gcfernando/pipewarden
-#     rev: v1.0.0
-#     hooks:
-#       - id: pipewarden-secrets
-#       - id: pipewarden-diff
+# This file lets any project consume pipewarden directly as a pre-commit
+# hook source without installing it separately. Add the following block
+# to your project's .pre-commit-config.yaml and choose the hooks you need:
 #
+#   repos:
+#     - repo: https://github.com/gcfernando/pipewarden
+#       rev: v1.3.0          # pin to a release tag, not a branch
+#       hooks:
+#         - id: pipewarden-secrets     # recommended for all teams
+#         - id: pipewarden-diff        # recommended for large repositories
+#         - id: pipewarden-full        # opt-in; run manually with: pre-commit run pipewarden-full
+#
+# Hook summary:
+#   pipewarden-secrets  — scans every commit for leaked credentials (pre-commit + pre-push)
+#   pipewarden-diff     — fast pre-push scan limited to files changed vs origin/main
+#   pipewarden-full     — full local CI pipeline; lint, test, build, scan (manual only)
+
+
+# ---------------------------------------------------------------------------
+# Hook 1: Secrets scan on every commit and push
+#
+# This is the hook most teams should enable. It runs the secrets stage only
+# so it stays fast (typically under 2 seconds on most repositories).
+# Runs at both pre-commit and pre-push so leaks are caught as early as
+# possible — before they ever leave the developer's machine.
+# ---------------------------------------------------------------------------
 - id: pipewarden-secrets
-  name: pipewarden (secrets only)
-  description: Scan staged files for committed secrets.
+  name: Pipewarden — scan for secrets
+  description: >
+    Scans all tracked files for hardcoded credentials, API keys, and
+    connection strings using pipewarden's built-in secret scanner.
+    Blocks the commit or push if any findings are detected.
   entry: pipewarden --only secrets --no-color
   language: python
+  # pre-commit passes filenames by default; we don't want that here because
+  # pipewarden handles its own file discovery (respecting .gitignore etc.)
   pass_filenames: false
+  # Force the hook to run even when no files match the default file filter.
+  # Without this, a commit that only touches binary files would skip the scan.
   always_run: true
   stages: [pre-commit, pre-push]
 
+
+# ---------------------------------------------------------------------------
+# Hook 2: Fast diff-scoped secrets scan on push
+#
+# Designed for large repositories where scanning every file on every push
+# would be too slow. Instead of scanning the entire working tree, this hook
+# only inspects files that changed between the current branch and origin/main.
+# Untracked (new) files are included automatically.
+#
+# Use this as a lightweight alternative to pipewarden-secrets on push,
+# or run both — pipewarden-secrets catches local changes, this catches
+# anything that slipped through across the full diff.
+# ---------------------------------------------------------------------------
 - id: pipewarden-diff
-  name: pipewarden (changed files only)
-  description: Fast pre-push check — scans files changed vs origin/main.
+  name: Pipewarden — scan changed files for secrets (diff mode)
+  description: >
+    Scans only the files that differ from origin/main rather than the full
+    working tree. Faster than a full scan on large repositories while still
+    catching secrets introduced in the current branch.
   entry: pipewarden --only secrets --diff origin/main --no-color
   language: python
   pass_filenames: false
   always_run: true
+  # Pre-push only — at this point we have a meaningful diff against the
+  # remote branch. Running this at pre-commit would produce an empty diff
+  # for most commits and give a false sense of security.
   stages: [pre-push]
 
+
+# ---------------------------------------------------------------------------
+# Hook 3: Full local CI pipeline (manual trigger only)
+#
+# Runs the complete pipewarden pipeline: install dependencies, lint,
+# type-check, test, build, secrets scan, and vulnerability scan.
+# This mirrors what the quality-gate CI workflow does on every PR.
+#
+# Intentionally set to "manual" so it never blocks normal git operations.
+# Invoke it on-demand before opening a PR:
+#
+#   pre-commit run pipewarden-full --all-files
+# ---------------------------------------------------------------------------
 - id: pipewarden-full
-  name: pipewarden (full)
-  description: Full local CI run. Slower; use sparingly.
+  name: Pipewarden — full local CI pipeline
+  description: >
+    Runs the complete pipewarden pipeline (lint, type-check, test, build,
+    secrets scan, vulnerability scan) against the repository. Mirrors the
+    quality-gate CI workflow. Intended to be run manually before opening a PR.
   entry: pipewarden --no-color
   language: python
   pass_filenames: false
   always_run: true
+  # "manual" means this hook never runs automatically on commit or push.
+  # It only runs when explicitly invoked via: pre-commit run pipewarden-full
   stages: [manual]

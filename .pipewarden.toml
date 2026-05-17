@@ -1,10 +1,53 @@
-# Pipewarden runs against itself in CI.
-[stages]
-docker = false  # no docker daemon in our test env
-vulns  = false  # we don't ship lockfiles here
+# Pipewarden configuration for this repository.
+#
+# Pipewarden runs against itself in CI (dog-fooding) via the quality-gate
+# workflow. This file tells it which stages to skip and which known-safe
+# values to ignore during the secrets scan.
+#
+# Full configuration reference:
+#   https://github.com/gcfernando/pipewarden
 
+# ---------------------------------------------------------------------------
+# Stage toggles
+# Only the stages that cannot run meaningfully in this repo are disabled.
+# All other stages (python, dotnet, go, rust, secrets) run as normal.
+# ---------------------------------------------------------------------------
+[stages]
+
+# No Docker daemon is available in the GitHub Actions runner we use,
+# so building an image would always fail. Disable to keep CI green.
+docker = false
+
+# This repository does not ship a lockfile (pip, npm, cargo, go.sum),
+# so pip-audit / npm audit / govulncheck have nothing to scan.
+# Re-enable this once a lockfile is added to the repo.
+vulns = false
+
+
+# ---------------------------------------------------------------------------
+# Secrets scan configuration
+# The built-in scanner is used (gitleaks is not installed in CI).
+# ---------------------------------------------------------------------------
 [secrets]
+
+# This AWS key ID appears in the test suite as a known-fake example value.
+# It is not a real credential — allowlisting it prevents a false positive
+# every time the test file is scanned.
 allowlist_strings = ["AKIAIOSFODNN7EXAMPLE"]
-# Tests contain known-fake private keys for the private-key.pem rule.
-# .pipewarden.toml excluded to avoid false positives from allowlist_strings entries.
-allowlist_paths   = ["dist/**", ".pipewarden-venv/**", "tests/test_secrets.py", ".pipewarden.toml"]
+
+# Paths that are intentionally excluded from secret scanning:
+#
+#   dist/**              — built artifacts; may contain minified source with
+#                          placeholder strings that look like secrets
+#   .pipewarden-venv/**  — the isolated venv created by the python stage;
+#                          third-party packages are not our responsibility
+#   tests/test_secrets.py — contains deliberately fake private keys and tokens
+#                          used as fixtures to verify the scanner works
+#   .pipewarden.toml     — this file; the allowlist_strings entry above would
+#                          trigger its own rule if we scanned ourselves
+allowlist_paths = [
+    "dist/**",
+    ".pipewarden-venv/**",
+    "tests/test_secrets.py",
+    ".pipewarden.toml",
+]
