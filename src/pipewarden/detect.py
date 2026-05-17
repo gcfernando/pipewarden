@@ -7,6 +7,7 @@ from pathlib import Path
 
 @dataclass
 class Detection:
+    """What was found in the project root. All fields default to False/empty."""
     python: bool = False
     node: bool = False
     dotnet: bool = False
@@ -28,6 +29,7 @@ class Detection:
     dockerfile_name: str = "Dockerfile"
 
     def labels(self) -> list[str]:
+        """Return human-readable labels for every detected language/tool."""
         out: list[str] = []
         if self.python:
             out.append("python")

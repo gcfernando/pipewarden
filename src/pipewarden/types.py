@@ -36,6 +36,7 @@ class Finding:
     snippet: str = ""
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialise the finding to a plain dict for JSON output."""
         return {
             "rule_id": self.rule_id,
             "message": self.message,
@@ -59,9 +60,11 @@ class StepResult:
     findings: list[Finding] = field(default_factory=list)
 
     def is_failure(self) -> bool:
+        """Return True only when status is FAILED (not WARNED or SKIPPED)."""
         return self.status == Status.FAILED
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialise the step result to a plain dict for JSON output."""
         return {
             "name": self.name,
             "status": self.status.value,
@@ -85,18 +88,22 @@ class Report:
     config_path: str | None = None
 
     def add(self, step: StepResult) -> None:
+        """Append a completed step to the run's step list."""
         self.steps.append(step)
 
     def failed(self) -> list[StepResult]:
+        """Return every step that ended in FAILED status."""
         return [s for s in self.steps if s.is_failure()]
 
     def all_findings(self) -> list[Finding]:
+        """Flatten findings from every step into a single list."""
         out: list[Finding] = []
         for s in self.steps:
             out.extend(s.findings)
         return out
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialise the entire report to a plain dict for JSON output."""
         return {
             "root": self.root,
             "tool_version": self.tool_version,

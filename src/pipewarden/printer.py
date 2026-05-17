@@ -15,6 +15,11 @@ _ICONS = {
 
 # Respect NO_COLOR (https://no-color.org) and non-TTY by default.
 def _supports_color(force: bool = False) -> bool:
+    """Return True if the terminal can render ANSI color codes.
+
+    Always returns False when the NO_COLOR environment variable is set,
+    which is the standard convention for disabling color in CLI tools.
+    """
     if "NO_COLOR" in os.environ:
         return False
     if force:
@@ -23,14 +28,19 @@ def _supports_color(force: bool = False) -> bool:
 
 
 class Printer:
+    """Writes human-readable console output with optional ANSI color."""
+
     def __init__(self, quiet: bool = False, color: bool = True) -> None:
+        """Create a Printer. Pass quiet=True to suppress all non-error output."""
         self.quiet = quiet
         self.color = color and _supports_color()
 
     def _c(self, code: str, text: str) -> str:
+        """Wrap text in an ANSI escape sequence, or return it unchanged if color is off."""
         return f"\033[{code}m{text}\033[0m" if self.color else text
 
     def section(self, title: str) -> None:
+        """Print a bold section header — the separator line before each language stage."""
         if self.quiet:
             return
         bar = "═" * 64
@@ -39,22 +49,27 @@ class Printer:
         print(self._c("1;36", bar))
 
     def info(self, msg: str) -> None:
+        """Print an indented informational line (e.g. root path, detected languages)."""
         if not self.quiet:
             print(f"  {msg}")
 
     def ok(self, msg: str) -> None:
+        """Print a green check-mark line for a passing step."""
         if not self.quiet:
             print(self._c("1;32", f"✓ {msg}"))
 
     def warn(self, msg: str) -> None:
+        """Print a yellow warning line for a non-blocking issue."""
         if not self.quiet:
             print(self._c("1;33", f"⚠ {msg}"))
 
     def fail(self, msg: str) -> None:
+        """Print a red failure line to stderr — always shown, even in quiet mode."""
         print(self._c("1;31", f"✗ {msg}"), file=sys.stderr)
 
 
 def print_summary(report: Report, printer: Printer) -> None:
+    """Print the final summary table and, if there were failures, the output tails."""
     printer.section("Summary")
     if not report.steps:
         printer.info("nothing to do")

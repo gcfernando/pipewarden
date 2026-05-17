@@ -29,6 +29,7 @@ class ConfigError(ValueError):
 
 @dataclass
 class SecretsConfig:
+    """Controls how and whether secret scanning runs."""
     enabled: bool = True
     prefer_external: bool = True   # use gitleaks if installed
     scan_history: bool = False     # scan full git history (gitleaks only)
@@ -41,6 +42,7 @@ class SecretsConfig:
 
 @dataclass
 class StageToggles:
+    """Per-language on/off switches. Defaults to everything enabled."""
     python: bool = True
     node: bool = True
     dotnet: bool = True
@@ -53,6 +55,7 @@ class StageToggles:
 
 @dataclass
 class TimeoutsConfig:
+    """Per-phase subprocess timeouts in seconds."""
     install_s: int = 900
     build_s: int = 900
     test_s: int = 1800
@@ -62,6 +65,7 @@ class TimeoutsConfig:
 
 @dataclass
 class OutputConfig:
+    """Where and how to write reports and human-readable output."""
     json_path: str | None = None
     sarif_path: str | None = None
     junit_path: str | None = None
@@ -72,6 +76,7 @@ class OutputConfig:
 
 @dataclass
 class RetryConfig:
+    """Retry policy for network-heavy steps that fail transiently."""
     attempts: int = 0          # 0 = disabled; capped at 5 by validate()
     backoff_base: float = 2.0  # seconds before first retry; doubles each attempt
 
@@ -128,6 +133,7 @@ CONFIG_FILENAMES = (".pipewarden.toml", "pipewarden.toml")
 
 
 def find_config_file(root: Path) -> Path | None:
+    """Search root for a recognised config filename and return its path, or None."""
     for name in CONFIG_FILENAMES:
         p = root / name
         if p.is_file():

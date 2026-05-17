@@ -93,6 +93,7 @@ def _run_once(
     stream: bool = True,
     indent: str = "   ",
 ) -> StepResult:
+    """Execute cmd once and return the result. Called by run_cmd for each attempt."""
     start = time.monotonic()
     binary = shutil.which(cmd[0])
     if binary is None:

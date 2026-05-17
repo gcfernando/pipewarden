@@ -50,6 +50,7 @@ class _FailFast(Exception):
 
 
 def _setup_logging(log_path: str | None, verbose: bool) -> None:
+    """Configure the root logger: write to a file and/or stderr depending on the flags."""
     handlers: list[logging.Handler] = []
     if log_path:
         handlers.append(logging.FileHandler(log_path, encoding="utf-8"))
@@ -66,6 +67,7 @@ def _setup_logging(log_path: str | None, verbose: bool) -> None:
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
+    """Parse command-line arguments and return the populated namespace."""
     p = argparse.ArgumentParser(
         prog="pipewarden",
         description="Detect, install, lint, test, build, scan — locally or in CI.",
@@ -139,6 +141,7 @@ def merge_cli_into_config(cfg: PipelineConfig, args: argparse.Namespace) -> None
 
 
 def _stage_enabled(name: str, cfg: PipelineConfig) -> bool:
+    """Return True if the stage should run given the current --only/--skip/config state."""
     if cfg.only and name not in cfg.only:
         return False
     if name in cfg.skip:
@@ -185,6 +188,7 @@ _INIT_TEMPLATE = """\
 
 
 def _cmd_init(root: Path) -> int:
+    """Write a starter .pipewarden.toml to root, refusing to overwrite an existing one."""
     target = root / ".pipewarden.toml"
     if target.exists():
         print(f"error: {target} already exists — remove it first", file=sys.stderr)
@@ -195,6 +199,7 @@ def _cmd_init(root: Path) -> int:
 
 
 def _cmd_validate(cfg_path: Path | None) -> int:
+    """Load and validate the config file, printing the outcome. Returns EXIT_OK or EXIT_CONFIG."""
     try:
         load_config(cfg_path)
         print(f"config OK: {cfg_path or '(defaults)'}")
@@ -205,6 +210,7 @@ def _cmd_validate(cfg_path: Path | None) -> int:
 
 
 def _cmd_list_stages(root: Path, cfg: PipelineConfig) -> int:
+    """Print a table showing which stages were detected and whether they are enabled."""
     d = detect(root)
     any_lang = bool(d.python or d.node or d.rust or d.go)
     detected_map = {
@@ -230,6 +236,7 @@ def _cmd_list_stages(root: Path, cfg: PipelineConfig) -> int:
 
 
 def _cmd_dry_run(root: Path, cfg: PipelineConfig) -> int:
+    """Print which stages would run without actually executing any of them."""
     d = detect(root)
     any_lang = bool(d.python or d.node or d.rust or d.go)
     detected_map = {
@@ -265,6 +272,7 @@ def _cmd_dry_run(root: Path, cfg: PipelineConfig) -> int:
 # ---------------------------------------------------------------------------
 
 def main(argv: list[str] | None = None) -> int:
+    """Entry point for the pipewarden CLI. Returns a process exit code."""
     try:
         args = parse_args(argv if argv is not None else sys.argv[1:])
     except SystemExit as e:
@@ -378,6 +386,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _log_step(s: StepResult, printer: Printer) -> None:
+    """Print a single step result in the appropriate color and icon."""
     if s.status == Status.PASSED:
         printer.ok(f"{s.name} ({s.duration_s:.1f}s)")
     elif s.status == Status.FAILED:
@@ -390,6 +399,7 @@ def _log_step(s: StepResult, printer: Printer) -> None:
 
 def _emit_outputs(report: Report, cfg: PipelineConfig,
                   args: argparse.Namespace, printer: Printer) -> None:
+    """Write all requested output formats: pretty summary, JSON, SARIF, JUnit XML, Markdown, and GHA annotations."""
     # JSON to stdout (--json) is mutually exclusive with the pretty summary.
     if cfg.output.quiet:
         sys.stdout.write(to_json(report))

@@ -21,6 +21,7 @@ from .types import Status, StepResult
 
 
 class _RetryKw(TypedDict):
+    """Keyword arguments forwarded to run_cmd for retry behaviour."""
     retries: int
     backoff_base: float
 
@@ -54,7 +55,7 @@ def _docker_daemon_available() -> bool:
 # ---------------------------------------------------------------------------
 
 def _pyproject_has_section(root: Path, dotted: str) -> bool:
-    """Return True if pyproject.toml contains the given dotted section."""
+    """Return True if pyproject.toml contains the given dotted TOML section (e.g. 'tool.mypy')."""
     if sys.version_info >= (3, 11):
         import tomllib
     else:  # pragma: no cover
@@ -77,6 +78,11 @@ def _pyproject_has_section(root: Path, dotted: str) -> bool:
 
 def run_python(root: Path, d: Detection, cfg: PipelineConfig,
                results: list[StepResult]) -> None:
+    """Run the full Python pipeline: venv creation, dependency install, lint, typecheck, test.
+
+    Uses an isolated .pipewarden-venv so it never touches the project's own
+    virtual environment. Package manager is chosen automatically: uv > poetry > pip.
+    """
     venv = root / ".pipewarden-venv"
     py = sys.executable
 
@@ -156,6 +162,7 @@ def run_python(root: Path, d: Detection, cfg: PipelineConfig,
 # ---------------------------------------------------------------------------
 
 def _read_npm_scripts(root: Path) -> dict[str, str]:
+    """Return the scripts dict from package.json, or an empty dict on any read/parse error."""
     try:
         with (root / "package.json").open("r", encoding="utf-8") as f:
             return dict(json.load(f).get("scripts") or {})
@@ -165,6 +172,7 @@ def _read_npm_scripts(root: Path) -> dict[str, str]:
 
 def run_node(root: Path, d: Detection, cfg: PipelineConfig,
              results: list[StepResult]) -> None:
+    """Run the Node.js pipeline: install deps, then any lint/typecheck/test/build scripts found."""
     pm = d.node_pm
     if pm == "pnpm":
         install_cmd = ["pnpm", "install", "--frozen-lockfile"]
@@ -197,6 +205,7 @@ def run_node(root: Path, d: Detection, cfg: PipelineConfig,
 
 def run_dotnet(root: Path, _d: Detection, cfg: PipelineConfig,
                results: list[StepResult]) -> None:
+    """Run the .NET pipeline: restore, optional format check, build, test, optional vuln/outdated scan."""
     dcfg: DotnetConfig = cfg.dotnet
 
     r = run_cmd(["dotnet", "restore"], cwd=root, name="dotnet:restore",
@@ -237,6 +246,7 @@ def run_dotnet(root: Path, _d: Detection, cfg: PipelineConfig,
 
 def run_go(root: Path, _d: Detection, cfg: PipelineConfig,
            results: list[StepResult]) -> None:
+    """Run the Go pipeline: module download, vet, build, test."""
     results.append(run_cmd(["go", "mod", "download"], cwd=root, name="go:deps",
                            timeout=cfg.timeouts.install_s, required=True,
                            **_retry_kw(cfg)))
@@ -252,6 +262,7 @@ def run_go(root: Path, _d: Detection, cfg: PipelineConfig,
 
 def run_rust(root: Path, _d: Detection, cfg: PipelineConfig,
              results: list[StepResult]) -> None:
+    """Run the Rust pipeline: crate fetch, Clippy lint, build, test."""
     results.append(run_cmd(["cargo", "fetch"], cwd=root, name="rust:deps",
                            timeout=cfg.timeouts.install_s, required=True,
                            **_retry_kw(cfg)))
@@ -291,6 +302,7 @@ def _run_container_scan(tag: str, root: Path, cfg: PipelineConfig,
 
 def run_docker(root: Path, d: Detection, cfg: PipelineConfig,
                results: list[StepResult]) -> None:
+    """Run the Docker pipeline: hadolint lint, image build, and optional container CVE scan."""
     dockerfile = d.dockerfile_name
     if shutil.which("hadolint"):
         results.append(run_cmd(["hadolint", dockerfile], cwd=root,

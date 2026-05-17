@@ -13,6 +13,7 @@ from .types import Report, Severity, Status
 # ---------------------------------------------------------------------------
 
 def to_json(report: Report) -> str:
+    """Serialise the full report to a pretty-printed JSON string."""
     return json.dumps(report.to_dict(), indent=2, sort_keys=False)
 
 
