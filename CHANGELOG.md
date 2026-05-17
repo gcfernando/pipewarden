@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.3] — 2026-05-17
+
+### Fixed
+
+- **CHANGELOG self-scan false positive fixed** — the 1.3.2 changelog entry quoted a connection-string example that matched the `mssql.connection_string` regex, causing CI to exit 4. Rewrote the description to avoid including the triggering pattern literally. Yanked 1.3.2 on PyPI; this release is the corrected replacement.
+
+---
+
 ## [1.3.2] — 2026-05-17
 
 ### Fixed

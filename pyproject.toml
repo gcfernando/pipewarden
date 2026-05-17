@@ -23,7 +23,7 @@ build-backend = "hatchling.build"
 # =============================================================================
 [project]
 name        = "pipewarden"
-version     = "1.3.2"
+version     = "1.3.3"
 description = "Pipewarden — detect, install, lint, test, build, scan — locally or in CI. Free and open."
 readme      = "README.md"
 license     = { file = "LICENSE" }
