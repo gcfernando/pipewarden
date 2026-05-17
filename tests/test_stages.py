@@ -75,14 +75,14 @@ class CallRecorder:
         return [c["name"] for c in self.calls]
 
 
-@pytest.fixture
-def cfg() -> PipelineConfig:
+@pytest.fixture(name="cfg")
+def _cfg() -> PipelineConfig:
     """Provide a default PipelineConfig for each test."""
     return PipelineConfig()
 
 
-@pytest.fixture
-def recorder() -> CallRecorder:
+@pytest.fixture(name="recorder")
+def _recorder() -> CallRecorder:
     """Provide a fresh CallRecorder that defaults to PASSED for each test."""
     return CallRecorder()
 
