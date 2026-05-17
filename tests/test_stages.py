@@ -570,9 +570,9 @@ def test_docker_scan_not_called_when_build_fails(
 def test_run_container_scan_trivy_preferred_over_grype(
     tmp_project: Path, cfg: PipelineConfig, recorder: CallRecorder
 ) -> None:
-    with patch("pipewarden.stages.shutil.which", return_value="found"):
-        with _patch_stage("run_cmd", recorder):
-            _run_container_scan(cfg.docker_tag, tmp_project, cfg, [])
+    with patch("pipewarden.stages.shutil.which", return_value="found"), \
+         _patch_stage("run_cmd", recorder):
+        _run_container_scan(cfg.docker_tag, tmp_project, cfg, [])
     # trivy is checked first; both trivy and grype "available" → trivy wins
     names = recorder.names()
     assert "docker:scan(trivy)" in names
@@ -586,7 +586,6 @@ def test_run_container_scan_trivy_preferred_over_grype(
 def test_outdated_python_with_venv(
     tmp_project: Path, cfg: PipelineConfig, recorder: CallRecorder
 ) -> None:
-    import os as _os
     venv = tmp_project / ".pipewarden-venv"
     venv.mkdir()
     results: list[StepResult] = []
@@ -610,9 +609,9 @@ def test_outdated_node_npm(
 ) -> None:
     results: list[StepResult] = []
     with patch("pipewarden.stages.shutil.which",
-               side_effect=lambda x: x if x == "npm" else None):
-        with _patch_stage("run_cmd", recorder):
-            run_outdated(tmp_project, Detection(node=True, node_pm="npm"), cfg, results)
+               side_effect=lambda x: x if x == "npm" else None), \
+         _patch_stage("run_cmd", recorder):
+        run_outdated(tmp_project, Detection(node=True, node_pm="npm"), cfg, results)
     assert "outdated:node(npm)" in recorder.names()
 
 
@@ -621,9 +620,9 @@ def test_outdated_go(
 ) -> None:
     results: list[StepResult] = []
     with patch("pipewarden.stages.shutil.which",
-               side_effect=lambda x: x if x == "go" else None):
-        with _patch_stage("run_cmd", recorder):
-            run_outdated(tmp_project, Detection(go=True), cfg, results)
+               side_effect=lambda x: x if x == "go" else None), \
+         _patch_stage("run_cmd", recorder):
+        run_outdated(tmp_project, Detection(go=True), cfg, results)
     assert "outdated:go" in recorder.names()
 
 
@@ -632,9 +631,9 @@ def test_outdated_rust_cargo_outdated(
 ) -> None:
     results: list[StepResult] = []
     with patch("pipewarden.stages.shutil.which",
-               side_effect=lambda x: x if x == "cargo-outdated" else None):
-        with _patch_stage("run_cmd", recorder):
-            run_outdated(tmp_project, Detection(rust=True), cfg, results)
+               side_effect=lambda x: x if x == "cargo-outdated" else None), \
+         _patch_stage("run_cmd", recorder):
+        run_outdated(tmp_project, Detection(rust=True), cfg, results)
     assert "outdated:rust(cargo-outdated)" in recorder.names()
 
 
@@ -642,9 +641,9 @@ def test_outdated_rust_skipped_without_cargo_outdated(
     tmp_project: Path, cfg: PipelineConfig, recorder: CallRecorder
 ) -> None:
     results: list[StepResult] = []
-    with patch("pipewarden.stages.shutil.which", return_value=None):
-        with _patch_stage("run_cmd", recorder):
-            run_outdated(tmp_project, Detection(rust=True), cfg, results)
+    with patch("pipewarden.stages.shutil.which", return_value=None), \
+         _patch_stage("run_cmd", recorder):
+        run_outdated(tmp_project, Detection(rust=True), cfg, results)
     # cargo-outdated not installed → no run_cmd call, falls to any_ran=False SKIPPED
     assert results[0].status == Status.SKIPPED
 
@@ -653,9 +652,9 @@ def test_outdated_no_languages_skipped(
     tmp_project: Path, cfg: PipelineConfig, recorder: CallRecorder
 ) -> None:
     results: list[StepResult] = []
-    with patch("pipewarden.stages.shutil.which", return_value=None):
-        with _patch_stage("run_cmd", recorder):
-            run_outdated(tmp_project, Detection(), cfg, results)
+    with patch("pipewarden.stages.shutil.which", return_value=None), \
+         _patch_stage("run_cmd", recorder):
+        run_outdated(tmp_project, Detection(), cfg, results)
     assert len(results) == 1
     assert results[0].status == Status.SKIPPED
 
@@ -667,9 +666,9 @@ def test_outdated_steps_are_non_blocking(
     rec = CallRecorder(default_status=Status.WARNED)
     results: list[StepResult] = []
     with patch("pipewarden.stages.shutil.which",
-               side_effect=lambda x: x if x == "npm" else None):
-        with _patch_stage("run_cmd", rec):
-            run_outdated(tmp_project, Detection(node=True, node_pm="npm"), cfg, results)
+               side_effect=lambda x: x if x == "npm" else None), \
+         _patch_stage("run_cmd", rec):
+        run_outdated(tmp_project, Detection(node=True, node_pm="npm"), cfg, results)
     # required=False means failures become WARNED; the step must not be FAILED.
     for r in results:
         assert r.status != Status.FAILED

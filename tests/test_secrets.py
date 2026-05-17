@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 from pipewarden.config import SecretsConfig
 from pipewarden.secrets import SECRET_PATTERNS, _compile_glob, scan_secrets, scan_secrets_fallback
-from pipewarden.types import Status
+from pipewarden.types import Status, StepResult
 
 
 def test_clean_repo(tmp_path: Path) -> None:
@@ -413,9 +413,8 @@ def test_newrelic_license_key_detected(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 def test_scan_secrets_uses_gitleaks_when_available(tmp_path: Path) -> None:
-    from pipewarden.types import StepResult, Status as St
     cfg = SecretsConfig(prefer_external=True)
-    fake_result = StepResult(name="secrets:gitleaks", status=St.PASSED)
+    fake_result = StepResult(name="secrets:gitleaks", status=Status.PASSED)
     with patch("pipewarden.secrets.shutil.which", return_value="gitleaks"), \
          patch("pipewarden.secrets.run_cmd", return_value=fake_result) as mock_run:
         r = scan_secrets(tmp_path, cfg, timeout=30)
@@ -425,9 +424,8 @@ def test_scan_secrets_uses_gitleaks_when_available(tmp_path: Path) -> None:
 
 
 def test_scan_secrets_history_mode_omits_source(tmp_path: Path) -> None:
-    from pipewarden.types import StepResult, Status as St
     cfg = SecretsConfig(prefer_external=True, scan_history=True)
-    fake_result = StepResult(name="secrets:gitleaks(history)", status=St.PASSED)
+    fake_result = StepResult(name="secrets:gitleaks(history)", status=Status.PASSED)
     with patch("pipewarden.secrets.shutil.which", return_value="gitleaks"), \
          patch("pipewarden.secrets.run_cmd", return_value=fake_result) as mock_run:
         r = scan_secrets(tmp_path, cfg, timeout=30)
