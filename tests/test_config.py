@@ -3,7 +3,9 @@ from pathlib import Path
 import pytest
 
 from pipewarden.config import (
+    ALL_STAGES,
     ConfigError,
+    DotnetConfig,
     PipelineConfig,
     apply_env_overrides,
     find_config_file,
@@ -187,3 +189,72 @@ def test_retry_invalid_backoff_raises() -> None:
     cfg.retry.backoff_base = 0.0
     with pytest.raises(ConfigError, match=r"retry\.backoff_base"):
         cfg.validate()
+
+
+# ---------------------------------------------------------------------------
+# DotnetConfig
+# ---------------------------------------------------------------------------
+
+def test_dotnet_config_defaults() -> None:
+    cfg = load_config(None)
+    assert isinstance(cfg.dotnet, DotnetConfig)
+    assert cfg.dotnet.format is True
+    assert cfg.dotnet.vulns is True
+    assert cfg.dotnet.outdated is False
+
+
+def test_dotnet_config_loaded_from_toml(tmp_path: Path) -> None:
+    p = tmp_path / ".pipewarden.toml"
+    p.write_text(
+        "[dotnet]\n"
+        "format = false\n"
+        "vulns = false\n"
+        "outdated = true\n"
+    )
+    cfg = load_config(p)
+    assert cfg.dotnet.format is False
+    assert cfg.dotnet.vulns is False
+    assert cfg.dotnet.outdated is True
+
+
+def test_dotnet_config_unknown_key_rejected(tmp_path: Path) -> None:
+    p = tmp_path / ".pipewarden.toml"
+    p.write_text("[dotnet]\nbogus = true\n")
+    with pytest.raises(ConfigError):
+        load_config(p)
+
+
+# ---------------------------------------------------------------------------
+# scan_history
+# ---------------------------------------------------------------------------
+
+def test_scan_history_defaults_false() -> None:
+    cfg = load_config(None)
+    assert cfg.secrets.scan_history is False
+
+
+def test_scan_history_loaded_from_toml(tmp_path: Path) -> None:
+    p = tmp_path / ".pipewarden.toml"
+    p.write_text("[secrets]\nscan_history = true\n")
+    cfg = load_config(p)
+    assert cfg.secrets.scan_history is True
+
+
+# ---------------------------------------------------------------------------
+# outdated stage toggle
+# ---------------------------------------------------------------------------
+
+def test_outdated_stage_in_all_stages() -> None:
+    assert "outdated" in ALL_STAGES
+
+
+def test_outdated_stage_disabled_by_default() -> None:
+    cfg = load_config(None)
+    assert cfg.stages.outdated is False
+
+
+def test_outdated_stage_enabled_via_toml(tmp_path: Path) -> None:
+    p = tmp_path / ".pipewarden.toml"
+    p.write_text("[stages]\noutdated = true\n")
+    cfg = load_config(p)
+    assert cfg.stages.outdated is True

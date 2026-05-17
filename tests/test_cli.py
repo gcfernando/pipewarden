@@ -107,7 +107,10 @@ def test_invoked_as_module(tmp_path: Path) -> None:
 def test_init_creates_config(tmp_path: Path) -> None:
     rc = main(["--init", "--root", str(tmp_path)])
     assert rc == 0
-    assert (tmp_path / ".pipewarden.toml").exists()
+    content = (tmp_path / ".pipewarden.toml").read_text()
+    assert "[dotnet]" in content
+    assert "scan_history" in content
+    assert "outdated" in content
 
 
 def test_init_fails_if_config_exists(tmp_path: Path,
@@ -144,6 +147,7 @@ def test_list_stages_empty_project(tmp_path: Path,
     out = capsys.readouterr().out
     assert "secrets" in out
     assert "Stage" in out
+    assert "outdated" in out
 
 
 def test_dry_run_empty_project(tmp_path: Path,
@@ -153,6 +157,7 @@ def test_dry_run_empty_project(tmp_path: Path,
     out = capsys.readouterr().out
     assert "Dry-run" in out
     assert "secrets" in out
+    assert "outdated" in out
 
 
 def test_dry_run_with_skip(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

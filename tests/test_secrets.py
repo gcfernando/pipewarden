@@ -1,7 +1,8 @@
 from pathlib import Path
+from unittest.mock import patch
 
 from pipewarden.config import SecretsConfig
-from pipewarden.secrets import SECRET_PATTERNS, _compile_glob, scan_secrets_fallback
+from pipewarden.secrets import SECRET_PATTERNS, _compile_glob, scan_secrets, scan_secrets_fallback
 from pipewarden.types import Status
 
 
@@ -405,3 +406,58 @@ def test_newrelic_license_key_detected(tmp_path: Path) -> None:
     r = scan_secrets_fallback(tmp_path, SecretsConfig())
     assert r.status == Status.FAILED
     assert any(f.rule_id == "newrelic.license_key" for f in r.findings)
+
+
+# ---------------------------------------------------------------------------
+# scan_secrets — gitleaks dispatch (working tree, history, diff, fallback)
+# ---------------------------------------------------------------------------
+
+def test_scan_secrets_uses_gitleaks_when_available(tmp_path: Path) -> None:
+    from pipewarden.types import StepResult, Status as St
+    cfg = SecretsConfig(prefer_external=True)
+    fake_result = StepResult(name="secrets:gitleaks", status=St.PASSED)
+    with patch("pipewarden.secrets.shutil.which", return_value="gitleaks"), \
+         patch("pipewarden.secrets.run_cmd", return_value=fake_result) as mock_run:
+        r = scan_secrets(tmp_path, cfg, timeout=30)
+    assert r.name == "secrets:gitleaks"
+    called_cmd = mock_run.call_args[0][0]
+    assert "--source" in called_cmd
+
+
+def test_scan_secrets_history_mode_omits_source(tmp_path: Path) -> None:
+    from pipewarden.types import StepResult, Status as St
+    cfg = SecretsConfig(prefer_external=True, scan_history=True)
+    fake_result = StepResult(name="secrets:gitleaks(history)", status=St.PASSED)
+    with patch("pipewarden.secrets.shutil.which", return_value="gitleaks"), \
+         patch("pipewarden.secrets.run_cmd", return_value=fake_result) as mock_run:
+        r = scan_secrets(tmp_path, cfg, timeout=30)
+    assert r.name == "secrets:gitleaks(history)"
+    called_cmd = mock_run.call_args[0][0]
+    assert "--source" not in called_cmd
+
+
+def test_scan_secrets_diff_base_bypasses_gitleaks(tmp_path: Path) -> None:
+    """When --diff is used with gitleaks available, the built-in scanner runs instead."""
+    (tmp_path / "clean.py").write_text("x = 1\n")
+    cfg = SecretsConfig(prefer_external=True)
+    with patch("pipewarden.secrets.shutil.which", return_value="gitleaks"):
+        r = scan_secrets(tmp_path, cfg, timeout=30, diff_base="origin/main")
+    # Built-in fallback → step name is "secrets:fallback"
+    assert r.name == "secrets:fallback"
+
+
+def test_scan_secrets_falls_back_when_gitleaks_absent(tmp_path: Path) -> None:
+    (tmp_path / "clean.py").write_text("x = 1\n")
+    cfg = SecretsConfig(prefer_external=True)
+    with patch("pipewarden.secrets.shutil.which", return_value=None):
+        r = scan_secrets(tmp_path, cfg, timeout=30)
+    assert r.name == "secrets:fallback"
+
+
+def test_scan_secrets_respects_prefer_external_false(tmp_path: Path) -> None:
+    """prefer_external=False always uses the built-in scanner."""
+    (tmp_path / "clean.py").write_text("x = 1\n")
+    cfg = SecretsConfig(prefer_external=False)
+    with patch("pipewarden.secrets.shutil.which", return_value="gitleaks"):
+        r = scan_secrets(tmp_path, cfg, timeout=30)
+    assert r.name == "secrets:fallback"

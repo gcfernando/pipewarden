@@ -18,10 +18,12 @@ from pipewarden.detect import Detection
 from pipewarden.stages import (
     _docker_daemon_available,
     _in_ci,
+    _run_container_scan,
     run_docker,
     run_dotnet,
     run_go,
     run_node,
+    run_outdated,
     run_python,
     run_rust,
     run_vulns,
@@ -334,6 +336,30 @@ def test_vulns_with_npm_audit(
     assert "vulns:npm-audit" in names
 
 
+def test_vulns_with_cargo_audit(
+    tmp_project: Path, cfg: PipelineConfig, recorder: CallRecorder
+) -> None:
+    with patch("pipewarden.stages.shutil.which",
+               side_effect=lambda x: x if x == "cargo-audit" else None):
+        results: list[StepResult] = []
+        with _patch_stage("run_cmd", recorder):
+            run_vulns(tmp_project, Detection(rust=True), cfg, results)
+    names = [r.name for r in results]
+    assert "vulns:cargo-audit" in names
+
+
+def test_vulns_with_govulncheck(
+    tmp_project: Path, cfg: PipelineConfig, recorder: CallRecorder
+) -> None:
+    with patch("pipewarden.stages.shutil.which",
+               side_effect=lambda x: x if x == "govulncheck" else None):
+        results: list[StepResult] = []
+        with _patch_stage("run_cmd", recorder):
+            run_vulns(tmp_project, Detection(go=True), cfg, results)
+    names = [r.name for r in results]
+    assert "vulns:govulncheck" in names
+
+
 def test_rust_with_clippy(
     tmp_project: Path, cfg: PipelineConfig, recorder: CallRecorder
 ) -> None:
@@ -399,3 +425,251 @@ def test_docker_unavailable_local_fails(
         run_docker(tmp_project, Detection(docker=True), cfg, results)
     build_step = next(r for r in results if r.name == "docker:build")
     assert build_step.status == Status.FAILED
+
+
+# ---------------------------------------------------------------------------
+# .NET — new steps (format, vulns, outdated)
+# ---------------------------------------------------------------------------
+
+def test_dotnet_full_pipeline_default_config(
+    tmp_project: Path, cfg: PipelineConfig, recorder: CallRecorder
+) -> None:
+    results: list[StepResult] = []
+    with _patch_stage("run_cmd", recorder):
+        run_dotnet(tmp_project, Detection(dotnet=True), cfg, results)
+    names = recorder.names()
+    assert "dotnet:restore" in names
+    assert "dotnet:format" in names
+    assert "dotnet:build" in names
+    assert "dotnet:test" in names
+    assert "dotnet:vulns" in names
+    assert "dotnet:outdated" not in names   # opt-in, off by default
+
+
+def test_dotnet_format_and_vulns_disabled(
+    tmp_project: Path, cfg: PipelineConfig, recorder: CallRecorder
+) -> None:
+    cfg.dotnet.format = False
+    cfg.dotnet.vulns = False
+    results: list[StepResult] = []
+    with _patch_stage("run_cmd", recorder):
+        run_dotnet(tmp_project, Detection(dotnet=True), cfg, results)
+    names = recorder.names()
+    assert "dotnet:format" not in names
+    assert "dotnet:vulns" not in names
+    assert "dotnet:build" in names
+    assert "dotnet:test" in names
+
+
+def test_dotnet_outdated_enabled(
+    tmp_project: Path, cfg: PipelineConfig, recorder: CallRecorder
+) -> None:
+    cfg.dotnet.outdated = True
+    results: list[StepResult] = []
+    with _patch_stage("run_cmd", recorder):
+        run_dotnet(tmp_project, Detection(dotnet=True), cfg, results)
+    assert "dotnet:outdated" in recorder.names()
+
+
+def test_dotnet_build_failure_skips_vulns_and_outdated(
+    tmp_project: Path, cfg: PipelineConfig
+) -> None:
+    cfg.dotnet.outdated = True
+    rec = CallRecorder()
+    rec.overrides["dotnet:build"] = Status.FAILED
+    results: list[StepResult] = []
+    with _patch_stage("run_cmd", rec):
+        run_dotnet(tmp_project, Detection(dotnet=True), cfg, results)
+    names = [r.name for r in results]
+    assert "dotnet:test" not in names
+    assert "dotnet:vulns" not in names
+    assert "dotnet:outdated" not in names
+
+
+def test_dotnet_format_runs_before_build(
+    tmp_project: Path, cfg: PipelineConfig, recorder: CallRecorder
+) -> None:
+    results: list[StepResult] = []
+    with _patch_stage("run_cmd", recorder):
+        run_dotnet(tmp_project, Detection(dotnet=True), cfg, results)
+    names = recorder.names()
+    assert names.index("dotnet:format") < names.index("dotnet:build")
+
+
+def test_dotnet_vulns_runs_after_test(
+    tmp_project: Path, cfg: PipelineConfig, recorder: CallRecorder
+) -> None:
+    results: list[StepResult] = []
+    with _patch_stage("run_cmd", recorder):
+        run_dotnet(tmp_project, Detection(dotnet=True), cfg, results)
+    names = recorder.names()
+    assert names.index("dotnet:test") < names.index("dotnet:vulns")
+
+
+# ---------------------------------------------------------------------------
+# Docker container image scanning
+# ---------------------------------------------------------------------------
+
+def test_docker_scan_trivy_after_successful_build(
+    tmp_project: Path, cfg: PipelineConfig, recorder: CallRecorder
+) -> None:
+    with (patch("pipewarden.stages._docker_daemon_available", return_value=True),
+          patch("pipewarden.stages.shutil.which",
+                side_effect=lambda x: x if x == "trivy" else None)):
+        results: list[StepResult] = []
+        with _patch_stage("run_cmd", recorder):
+            run_docker(tmp_project, Detection(docker=True), cfg, results)
+    names = recorder.names()
+    assert "docker:build" in names
+    assert "docker:scan(trivy)" in names
+    assert names.index("docker:build") < names.index("docker:scan(trivy)")
+
+
+def test_docker_scan_grype_when_trivy_absent(
+    tmp_project: Path, cfg: PipelineConfig, recorder: CallRecorder
+) -> None:
+    with (patch("pipewarden.stages._docker_daemon_available", return_value=True),
+          patch("pipewarden.stages.shutil.which",
+                side_effect=lambda x: x if x == "grype" else None)):
+        results: list[StepResult] = []
+        with _patch_stage("run_cmd", recorder):
+            run_docker(tmp_project, Detection(docker=True), cfg, results)
+    names = recorder.names()
+    assert "docker:scan(grype)" in names
+    assert "docker:scan(trivy)" not in names
+
+
+def test_docker_scan_skipped_when_no_scanner_available(
+    tmp_project: Path, cfg: PipelineConfig, recorder: CallRecorder
+) -> None:
+    with (patch("pipewarden.stages._docker_daemon_available", return_value=True),
+          patch("pipewarden.stages.shutil.which", return_value=None)):
+        results: list[StepResult] = []
+        with _patch_stage("run_cmd", recorder):
+            run_docker(tmp_project, Detection(docker=True), cfg, results)
+    names = recorder.names()
+    assert "docker:scan(trivy)" not in names
+    assert "docker:scan(grype)" not in names
+
+
+def test_docker_scan_not_called_when_build_fails(
+    tmp_project: Path, cfg: PipelineConfig
+) -> None:
+    rec = CallRecorder()
+    rec.overrides["docker:build"] = Status.FAILED
+    with (patch("pipewarden.stages._docker_daemon_available", return_value=True),
+          patch("pipewarden.stages.shutil.which",
+                side_effect=lambda x: x if x == "trivy" else None)):
+        results: list[StepResult] = []
+        with _patch_stage("run_cmd", rec):
+            run_docker(tmp_project, Detection(docker=True), cfg, results)
+    names = [r.name for r in results]
+    assert "docker:scan(trivy)" not in names
+
+
+def test_run_container_scan_trivy_preferred_over_grype(
+    tmp_project: Path, cfg: PipelineConfig, recorder: CallRecorder
+) -> None:
+    with patch("pipewarden.stages.shutil.which", return_value="found"):
+        with _patch_stage("run_cmd", recorder):
+            _run_container_scan(cfg.docker_tag, tmp_project, cfg, [])
+    # trivy is checked first; both trivy and grype "available" → trivy wins
+    names = recorder.names()
+    assert "docker:scan(trivy)" in names
+    assert "docker:scan(grype)" not in names
+
+
+# ---------------------------------------------------------------------------
+# Outdated stage
+# ---------------------------------------------------------------------------
+
+def test_outdated_python_with_venv(
+    tmp_project: Path, cfg: PipelineConfig, recorder: CallRecorder
+) -> None:
+    import os as _os
+    venv = tmp_project / ".pipewarden-venv"
+    venv.mkdir()
+    results: list[StepResult] = []
+    with _patch_stage("run_cmd", recorder):
+        run_outdated(tmp_project, Detection(python=True), cfg, results)
+    assert "outdated:python(pip)" in recorder.names()
+
+
+def test_outdated_python_no_venv_skipped(
+    tmp_project: Path, cfg: PipelineConfig, recorder: CallRecorder
+) -> None:
+    results: list[StepResult] = []
+    with _patch_stage("run_cmd", recorder):
+        run_outdated(tmp_project, Detection(python=True), cfg, results)
+    by_name = {r.name: r.status for r in results}
+    assert by_name.get("outdated:python(pip)") == Status.SKIPPED
+
+
+def test_outdated_node_npm(
+    tmp_project: Path, cfg: PipelineConfig, recorder: CallRecorder
+) -> None:
+    results: list[StepResult] = []
+    with patch("pipewarden.stages.shutil.which",
+               side_effect=lambda x: x if x == "npm" else None):
+        with _patch_stage("run_cmd", recorder):
+            run_outdated(tmp_project, Detection(node=True, node_pm="npm"), cfg, results)
+    assert "outdated:node(npm)" in recorder.names()
+
+
+def test_outdated_go(
+    tmp_project: Path, cfg: PipelineConfig, recorder: CallRecorder
+) -> None:
+    results: list[StepResult] = []
+    with patch("pipewarden.stages.shutil.which",
+               side_effect=lambda x: x if x == "go" else None):
+        with _patch_stage("run_cmd", recorder):
+            run_outdated(tmp_project, Detection(go=True), cfg, results)
+    assert "outdated:go" in recorder.names()
+
+
+def test_outdated_rust_cargo_outdated(
+    tmp_project: Path, cfg: PipelineConfig, recorder: CallRecorder
+) -> None:
+    results: list[StepResult] = []
+    with patch("pipewarden.stages.shutil.which",
+               side_effect=lambda x: x if x == "cargo-outdated" else None):
+        with _patch_stage("run_cmd", recorder):
+            run_outdated(tmp_project, Detection(rust=True), cfg, results)
+    assert "outdated:rust(cargo-outdated)" in recorder.names()
+
+
+def test_outdated_rust_skipped_without_cargo_outdated(
+    tmp_project: Path, cfg: PipelineConfig, recorder: CallRecorder
+) -> None:
+    results: list[StepResult] = []
+    with patch("pipewarden.stages.shutil.which", return_value=None):
+        with _patch_stage("run_cmd", recorder):
+            run_outdated(tmp_project, Detection(rust=True), cfg, results)
+    # cargo-outdated not installed → no run_cmd call, falls to any_ran=False SKIPPED
+    assert results[0].status == Status.SKIPPED
+
+
+def test_outdated_no_languages_skipped(
+    tmp_project: Path, cfg: PipelineConfig, recorder: CallRecorder
+) -> None:
+    results: list[StepResult] = []
+    with patch("pipewarden.stages.shutil.which", return_value=None):
+        with _patch_stage("run_cmd", recorder):
+            run_outdated(tmp_project, Detection(), cfg, results)
+    assert len(results) == 1
+    assert results[0].status == Status.SKIPPED
+
+
+def test_outdated_steps_are_non_blocking(
+    tmp_project: Path, cfg: PipelineConfig
+) -> None:
+    # Even if npm outdated exits non-zero, it should be WARNED not FAILED.
+    rec = CallRecorder(default_status=Status.WARNED)
+    results: list[StepResult] = []
+    with patch("pipewarden.stages.shutil.which",
+               side_effect=lambda x: x if x == "npm" else None):
+        with _patch_stage("run_cmd", rec):
+            run_outdated(tmp_project, Detection(node=True, node_pm="npm"), cfg, results)
+    # required=False means failures become WARNED; the step must not be FAILED.
+    for r in results:
+        assert r.status != Status.FAILED

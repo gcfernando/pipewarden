@@ -335,10 +335,16 @@ def scan_secrets(
 ) -> StepResult:
     """Entry point. Prefers gitleaks, falls back to built-in scanner."""
     if cfg.prefer_external and shutil.which("gitleaks"):
-        cmd = ["gitleaks", "detect", "--no-banner", "--redact", "--source", str(root)]
         # gitleaks doesn't natively scope by arbitrary ref range, so fall back
         # to the built-in scanner when a diff base is requested.
         if diff_base is not None:
             return scan_secrets_fallback(root, cfg, diff_base=diff_base)
-        return run_cmd(cmd, cwd=root, name="secrets:gitleaks", timeout=timeout, required=True)
+        if cfg.scan_history:
+            # No --source: gitleaks scans the full git commit history.
+            cmd = ["gitleaks", "detect", "--no-banner", "--redact"]
+            name = "secrets:gitleaks(history)"
+        else:
+            cmd = ["gitleaks", "detect", "--no-banner", "--redact", "--source", str(root)]
+            name = "secrets:gitleaks"
+        return run_cmd(cmd, cwd=root, name=name, timeout=timeout, required=True)
     return scan_secrets_fallback(root, cfg, diff_base=diff_base)

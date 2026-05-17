@@ -20,7 +20,7 @@ else:  # pragma: no cover
 
 
 # Stages must match the names used by the runner.
-ALL_STAGES = ("secrets", "vulns", "python", "node", "dotnet", "go", "rust", "docker")
+ALL_STAGES = ("secrets", "vulns", "outdated", "python", "node", "dotnet", "go", "rust", "docker")
 
 
 class ConfigError(ValueError):
@@ -31,6 +31,7 @@ class ConfigError(ValueError):
 class SecretsConfig:
     enabled: bool = True
     prefer_external: bool = True   # use gitleaks if installed
+    scan_history: bool = False     # scan full git history (gitleaks only)
     allowlist_paths: list[str] = field(default_factory=list)
     allowlist_rules: list[str] = field(default_factory=list)
     allowlist_strings: list[str] = field(default_factory=list)
@@ -47,6 +48,7 @@ class StageToggles:
     rust: bool = True
     docker: bool = True
     vulns: bool = True
+    outdated: bool = False   # opt-in: check for outdated dependencies
 
 
 @dataclass
@@ -75,6 +77,14 @@ class RetryConfig:
 
 
 @dataclass
+class DotnetConfig:
+    """Fine-grained controls for the .NET stage."""
+    format: bool = True    # dotnet format --verify-no-changes
+    vulns: bool = True     # dotnet list package --vulnerable --include-transitive
+    outdated: bool = False # dotnet list package --outdated (non-blocking, opt-in)
+
+
+@dataclass
 class PipelineConfig:
     """Top-level config."""
     fail_fast: bool = False
@@ -83,6 +93,7 @@ class PipelineConfig:
     docker_tag: str = "pipewarden-local:latest"
     stages: StageToggles = field(default_factory=StageToggles)
     secrets: SecretsConfig = field(default_factory=SecretsConfig)
+    dotnet: DotnetConfig = field(default_factory=DotnetConfig)
     timeouts: TimeoutsConfig = field(default_factory=TimeoutsConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
     retry: RetryConfig = field(default_factory=RetryConfig)

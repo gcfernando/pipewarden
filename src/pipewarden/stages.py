@@ -14,7 +14,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TypedDict
 
-from .config import PipelineConfig
+from .config import DotnetConfig, PipelineConfig
 from .detect import Detection
 from .runner import run_cmd
 from .types import Status, StepResult
@@ -197,19 +197,42 @@ def run_node(root: Path, d: Detection, cfg: PipelineConfig,
 
 def run_dotnet(root: Path, _d: Detection, cfg: PipelineConfig,
                results: list[StepResult]) -> None:
+    dcfg: DotnetConfig = cfg.dotnet
+
     r = run_cmd(["dotnet", "restore"], cwd=root, name="dotnet:restore",
                 timeout=cfg.timeouts.install_s, required=True, **_retry_kw(cfg))
     results.append(r)
     if r.is_failure():
         return
+
+    if dcfg.format:
+        results.append(run_cmd(
+            ["dotnet", "format", "--verify-no-changes"],
+            cwd=root, name="dotnet:format",
+            timeout=cfg.timeouts.default_s, required=True))
+
     r = run_cmd(["dotnet", "build", "--no-restore", "--nologo"], cwd=root,
                 name="dotnet:build", timeout=cfg.timeouts.build_s, required=True)
     results.append(r)
     if r.is_failure():
         return
+
     results.append(run_cmd(["dotnet", "test", "--no-build", "--nologo"],
                            cwd=root, name="dotnet:test",
                            timeout=cfg.timeouts.test_s, required=True))
+
+    if dcfg.vulns:
+        # Built-in CVE scan — no external tool required (.NET 8+ exits non-zero on findings).
+        results.append(run_cmd(
+            ["dotnet", "list", "package", "--vulnerable", "--include-transitive"],
+            cwd=root, name="dotnet:vulns",
+            timeout=cfg.timeouts.scan_s, required=True, **_retry_kw(cfg)))
+
+    if dcfg.outdated:
+        results.append(run_cmd(
+            ["dotnet", "list", "package", "--outdated"],
+            cwd=root, name="dotnet:outdated",
+            timeout=cfg.timeouts.scan_s, required=False, **_retry_kw(cfg)))
 
 
 def run_go(root: Path, _d: Detection, cfg: PipelineConfig,
@@ -251,6 +274,21 @@ def run_rust(root: Path, _d: Detection, cfg: PipelineConfig,
 # Docker
 # ---------------------------------------------------------------------------
 
+def _run_container_scan(tag: str, root: Path, cfg: PipelineConfig,
+                        results: list[StepResult]) -> None:
+    """Best-effort container image CVE scan. Uses trivy or grype if on PATH."""
+    if shutil.which("trivy"):
+        results.append(run_cmd(
+            ["trivy", "image", "--exit-code", "1", "--severity", "HIGH,CRITICAL", tag],
+            cwd=root, name="docker:scan(trivy)",
+            timeout=cfg.timeouts.scan_s, required=False))
+    elif shutil.which("grype"):
+        results.append(run_cmd(
+            ["grype", tag, "--fail-on", "high"],
+            cwd=root, name="docker:scan(grype)",
+            timeout=cfg.timeouts.scan_s, required=False))
+
+
 def run_docker(root: Path, d: Detection, cfg: PipelineConfig,
                results: list[StepResult]) -> None:
     dockerfile = d.dockerfile_name
@@ -270,9 +308,13 @@ def run_docker(root: Path, d: Detection, cfg: PipelineConfig,
         results.append(StepResult(name="docker:build", status=status, message=msg))
         return
 
-    results.append(run_cmd(
+    build_result = run_cmd(
         ["docker", "build", "-t", cfg.docker_tag, "-f", dockerfile, "."],
-        cwd=root, name="docker:build", timeout=cfg.timeouts.build_s, required=True))
+        cwd=root, name="docker:build", timeout=cfg.timeouts.build_s, required=True)
+    results.append(build_result)
+
+    if not build_result.is_failure():
+        _run_container_scan(cfg.docker_tag, root, cfg, results)
 
 
 # ---------------------------------------------------------------------------
@@ -315,13 +357,71 @@ def run_vulns(root: Path, d: Detection, cfg: PipelineConfig,
                                   message="no vuln scanner available"))
 
 
+# ---------------------------------------------------------------------------
+# Outdated dependency checking (opt-in, all steps non-blocking)
+# ---------------------------------------------------------------------------
+
+def run_outdated(root: Path, d: Detection, cfg: PipelineConfig,
+                 results: list[StepResult]) -> None:
+    """Report outdated dependencies across detected language ecosystems.
+
+    All steps are WARNED (non-blocking) — findings are informational.
+    Python requires the project venv to exist (run the python stage first).
+    """
+    any_ran = False
+
+    if d.python:
+        venv = root / ".pipewarden-venv"
+        if venv.is_dir():
+            vpy = str(venv / "Scripts" / "python.exe") if os.name == "nt" \
+                else str(venv / "bin" / "python")
+            results.append(run_cmd(
+                [vpy, "-m", "pip", "list", "--outdated"],
+                cwd=root, name="outdated:python(pip)",
+                timeout=cfg.timeouts.scan_s, required=False, **_retry_kw(cfg)))
+            any_ran = True
+        else:
+            results.append(StepResult(
+                name="outdated:python(pip)", status=Status.SKIPPED,
+                message="venv not found — run the python stage first"))
+
+    if d.node and shutil.which("npm"):
+        # npm outdated exits non-zero when packages are outdated; required=False
+        # treats that as WARNED rather than FAILED.
+        results.append(run_cmd(
+            ["npm", "outdated"],
+            cwd=root, name="outdated:node(npm)",
+            timeout=cfg.timeouts.scan_s, required=False))
+        any_ran = True
+
+    if d.go and shutil.which("go"):
+        results.append(run_cmd(
+            ["go", "list", "-m", "-u", "all"],
+            cwd=root, name="outdated:go",
+            timeout=cfg.timeouts.scan_s, required=False, **_retry_kw(cfg)))
+        any_ran = True
+
+    if d.rust and shutil.which("cargo-outdated"):
+        results.append(run_cmd(
+            ["cargo", "outdated"],
+            cwd=root, name="outdated:rust(cargo-outdated)",
+            timeout=cfg.timeouts.scan_s, required=False))
+        any_ran = True
+
+    if not any_ran:
+        results.append(StepResult(
+            name="outdated", status=Status.SKIPPED,
+            message="no supported language detected or no outdated checker available"))
+
+
 # Stage registry — drives main loop. Order matters.
 STAGES: dict[str, Callable[..., None]] = {
-    "python": run_python,
-    "node":   run_node,
-    "dotnet": run_dotnet,
-    "go":     run_go,
-    "rust":   run_rust,
-    "docker": run_docker,
-    "vulns":  run_vulns,
+    "python":   run_python,
+    "node":     run_node,
+    "dotnet":   run_dotnet,
+    "go":       run_go,
+    "rust":     run_rust,
+    "docker":   run_docker,
+    "vulns":    run_vulns,
+    "outdated": run_outdated,
 }

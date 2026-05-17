@@ -157,10 +157,17 @@ _INIT_TEMPLATE = """\
 
 [stages]
 # Uncomment to disable specific stages:
-# docker = false
-# vulns  = false
+# docker   = false
+# vulns    = false
+# outdated = true    # opt-in: check for outdated dependencies
+
+[dotnet]
+# format   = true   # dotnet format --verify-no-changes (code style)
+# vulns    = true   # dotnet list package --vulnerable (CVE scan, built-in)
+# outdated = false  # dotnet list package --outdated (non-blocking, opt-in)
 
 [secrets]
+# scan_history      = false  # scan full git history via gitleaks (opt-in)
 # allowlist_paths   = ["tests/fixtures/**", ".pipewarden-venv/**"]
 # allowlist_rules   = []
 # allowlist_strings = []
@@ -199,6 +206,7 @@ def _cmd_validate(cfg_path: Path | None) -> int:
 
 def _cmd_list_stages(root: Path, cfg: PipelineConfig) -> int:
     d = detect(root)
+    any_lang = bool(d.python or d.node or d.rust or d.go)
     detected_map = {
         "secrets": True,
         "python":  d.python,
@@ -207,11 +215,12 @@ def _cmd_list_stages(root: Path, cfg: PipelineConfig) -> int:
         "go":      d.go,
         "rust":    d.rust,
         "docker":  d.docker,
-        "vulns":   d.python or d.node or d.rust or d.go,
+        "vulns":   any_lang,
+        "outdated": any_lang,
     }
     print(f"{'Stage':<12}  {'Detected':<10}  {'Enabled'}")
     print("-" * 38)
-    for stage in ("secrets", "python", "node", "dotnet", "go", "rust", "docker", "vulns"):
+    for stage in ("secrets", "python", "node", "dotnet", "go", "rust", "docker", "vulns", "outdated"):
         det = "yes" if detected_map.get(stage) else "no"
         enabled = "yes" if (_stage_enabled(stage, cfg) and detected_map.get(stage)) else "no"
         if stage == "secrets":
@@ -222,22 +231,23 @@ def _cmd_list_stages(root: Path, cfg: PipelineConfig) -> int:
 
 def _cmd_dry_run(root: Path, cfg: PipelineConfig) -> int:
     d = detect(root)
+    any_lang = bool(d.python or d.node or d.rust or d.go)
     detected_map = {
-        "secrets": True,
-        "python":  d.python,
-        "node":    d.node,
-        "dotnet":  d.dotnet,
-        "go":      d.go,
-        "rust":    d.rust,
-        "docker":  d.docker,
-        "vulns":   d.python or d.node or d.rust or d.go,
+        "secrets":  True,
+        "python":   d.python,
+        "node":     d.node,
+        "dotnet":   d.dotnet,
+        "go":       d.go,
+        "rust":     d.rust,
+        "docker":   d.docker,
+        "vulns":    any_lang,
+        "outdated": any_lang,
     }
     print(f"Dry-run — detected: {', '.join(d.labels()) or '(nothing)'}\n")
     print(f"{'Stage':<12}  {'Would run?'}")
     print("-" * 30)
-    for stage in ("secrets", "python", "node", "dotnet", "go", "rust", "docker", "vulns"):
+    for stage in ("secrets", "python", "node", "dotnet", "go", "rust", "docker", "vulns", "outdated"):
         det = detected_map.get(stage, False)
-
         if not det:
             reason = "not detected"
         elif not _stage_enabled(stage, cfg):
@@ -311,10 +321,12 @@ def main(argv: list[str] | None = None) -> int:
     printer.info(f"config:   {cfg_path or '(defaults — no config file found)'}")
     printer.info(f"detected: {', '.join(d.labels()) or '(nothing recognized)'}")
 
+    any_lang = bool(d.python or d.node or d.rust or d.go)
     detected_map = {
         "python": d.python, "node": d.node, "dotnet": d.dotnet,
         "go": d.go, "rust": d.rust, "docker": d.docker,
-        "vulns": d.python or d.node or d.rust or d.go,
+        "vulns":    any_lang,
+        "outdated": any_lang,
     }
 
     try:
@@ -329,7 +341,7 @@ def main(argv: list[str] | None = None) -> int:
                 raise _FailFast()
 
         # Language stages
-        for stage_name in ("python", "node", "dotnet", "go", "rust", "docker", "vulns"):
+        for stage_name in ("python", "node", "dotnet", "go", "rust", "docker", "vulns", "outdated"):
             if not detected_map.get(stage_name):
                 continue
             if not _stage_enabled(stage_name, cfg):
