@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.2] — 2026-05-17
+
+### Fixed
+
+- **README factual errors corrected** — eight inaccuracies found by source-code audit: Rust commands now include `--all-targets`; step name corrected to `rust:lint(clippy)`; vulns stage shows exact flags (`pip-audit --strict`, `npm audit --audit-level=high --omit=dev`); gitleaks `--diff` fallback documented; Docker daemon absent behaviour distinguished (WARNED in CI, FAILED locally); Docker scan step absence when no scanner is on PATH clarified; `pipewarden.toml` (no dot) accepted as alternative config filename; mypy command corrected to `mypy .`.
+
+- **README self-scan false positive fixed** — the C# connection-string example `"Server=db;Password=Secr3t!"` matched the `mssql.connection_string` regex pattern, causing Pipewarden's own CI to exit 4. Changed the password value to `<YOUR-PASSWORD>` — the `<` character is excluded from the pattern's character class, preventing the match while keeping the example illustrative.
+
+---
+
 ## [1.3.1] — 2026-05-17
 
 ### Fixed

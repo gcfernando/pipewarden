@@ -141,13 +141,13 @@ Verify the installation:
 
 ```bash
 pipewarden --version
-# → pipewarden 1.3.1
+# → pipewarden 1.3.2
 ```
 
 ### Option 2 — Install from Source
 
 ```bash
-pip install git+https://github.com/gcfernando/pipewarden.git@v1.3.1
+pip install git+https://github.com/gcfernando/pipewarden.git@v1.3.2
 ```
 
 ### Option 3 — Docker (no local Python required)
@@ -208,7 +208,7 @@ You will see output like this:
 
 ```
 ════════════════════════════════════════════════════════════════
-  Pipewarden 1.3.1
+  Pipewarden 1.3.2
 ════════════════════════════════════════════════════════════════
   root:     /path/to/your-project
   config:   (defaults — no config file found)
@@ -669,7 +669,7 @@ pipewarden
 **What you see:**
 ```console
 ════════════════════════════════════════════════════════════════
-  Pipewarden 1.3.1
+  Pipewarden 1.3.2
 ════════════════════════════════════════════════════════════════
   root:     /home/alice/my-package
   config:   (defaults — no config file found)
@@ -1431,7 +1431,7 @@ pipewarden
 **What you see:**
 ```console
 ════════════════════════════════════════════════════════════════
-  Pipewarden 1.3.1
+  Pipewarden 1.3.2
 ════════════════════════════════════════════════════════════════
   root:     /home/alice/MyApp
   config:   (defaults — no config file found)
@@ -2508,7 +2508,7 @@ pipewarden --json > report.json
   "root": "/home/alice/my-app",
   ← The directory that was scanned
 
-  "tool_version": "1.3.1",
+  "tool_version": "1.3.2",
   ← Pipewarden version — useful for debugging version-specific behaviour
 
   "started_at": 1715860981.123,
@@ -2650,7 +2650,7 @@ SARIF (Static Analysis Results Interchange Format) is the industry standard for 
       "tool": {
         "driver": {
           "name": "pipewarden",
-          "version": "1.3.1",
+          "version": "1.3.2",
           ← Tool name and version for provenance tracking
 
           "rules": [
@@ -2859,7 +2859,7 @@ pipewarden --markdown-out summary.md
 When written to `$GITHUB_STEP_SUMMARY`, it appears as a formatted panel on the workflow run page:
 
 ```
-## Pipewarden 1.3.1
+## Pipewarden 1.3.2
 
 | Step | Status | Duration | Message |
 |---|---|---|---|
@@ -3235,7 +3235,7 @@ pip3 install pipewarden
 Verify:
 ```bash
 pipewarden --version
-# → pipewarden 1.3.1
+# → pipewarden 1.3.2
 ```
 
 > You only ever do Steps 1 and 2 once. After that, `pipewarden` is always available.
@@ -3428,7 +3428,7 @@ pipewarden --only dotnet
 ```bash
 # ── First-time setup ──────────────────────────────────────────────────────────
 pip install pipewarden                          # install Pipewarden (once)
-pipewarden --version                            # verify: pipewarden 1.3.1
+pipewarden --version                            # verify: pipewarden 1.3.2
 pipewarden --init                               # scaffold a .pipewarden.toml (optional)
 
 # ── Detect what Pipewarden sees ───────────────────────────────────────────────
@@ -3961,7 +3961,7 @@ Catch issues **before** code reaches the remote repository.
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/gcfernando/pipewarden
-    rev: v1.3.1
+    rev: v1.3.2
     hooks:
       - id: pipewarden-secrets     # Runs on every git commit
       - id: pipewarden-diff        # Runs on every git push (changed files only)
