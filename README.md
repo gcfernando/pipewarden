@@ -143,7 +143,7 @@ That's it. Same command for every project. Every language. Every CI system.
 ## 👥 Who Should Use It?
 
 | Role | How Pipewarden Helps |
-|------|--------------------------|
+|------|----------------------|
 | **Individual Developer** | Run the same quality checks locally that CI runs remotely. Catch issues before pushing. |
 | **Team Lead / Tech Lead** | Enforce a consistent quality baseline across all repositories with zero per-project setup. |
 | **DevOps / Platform Engineer** | Replace bespoke CI scripts with one standard tool. Reduce pipeline maintenance to zero. |
@@ -161,7 +161,7 @@ Here is what a real run looks like on a Python + Node + Docker project:
 $ pipewarden
 
 ════════════════════════════════════════════════════════════════
-  Pipewarden 1.3.0
+  Pipewarden 1.3.1
 ════════════════════════════════════════════════════════════════
   root:     /home/alice/my-app
   config:   (defaults — no config file found)
@@ -252,13 +252,13 @@ Verify the installation:
 
 ```bash
 pipewarden --version
-# → pipewarden 1.3.0
+# → pipewarden 1.3.1
 ```
 
 ### Option 2 — Install from Source
 
 ```bash
-pip install git+https://github.com/gcfernando/pipewarden.git@v1.3.0
+pip install git+https://github.com/gcfernando/pipewarden.git@v1.3.1
 ```
 
 ### Option 3 — Docker
@@ -267,6 +267,8 @@ pip install git+https://github.com/gcfernando/pipewarden.git@v1.3.0
 docker run --rm -v "$(pwd):/repo" ghcr.io/gcfernando/pipewarden:latest \
   pipewarden --root /repo
 ```
+
+> **Security-hardened image.** The official image is based on `python:3.12-alpine` — a minimal base that eliminates 2 high CVEs present in the Debian slim image and reduces the attack surface significantly.
 
 ### Troubleshooting Installation
 
@@ -632,7 +634,7 @@ ruff check .
 **What ruff catches** (selected rules from 800+ total):
 
 | Category | Examples |
-|----------|---------|
+|----------|----------|
 | Unused imports | `import os` — never used |
 | Undefined names | `pritn("hello")` — typo |
 | Mutable defaults | `def f(x=[]):` — classic Python bug |
@@ -2315,7 +2317,7 @@ Outputs a structured JSON document to stdout (suppresses all pretty output):
 ```json
 {
   "root": "/home/alice/my-app",
-  "tool_version": "1.0.0",
+  "tool_version": "1.3.1",
   "timestamp": "2026-05-16T14:23:01",
   "detected": ["python", "node(npm)", "docker(Dockerfile)"],
   "duration_s": 61.4,
@@ -2724,7 +2726,7 @@ Catch issues **before** code even reaches the remote repository by wiring Pipewa
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/gcfernando/pipewarden
-    rev: v1.3.0
+    rev: v1.3.1
     hooks:
       - id: pipewarden-secrets     # Runs on every git commit
       - id: pipewarden-diff        # Runs on every git push (changed files only)
@@ -2739,7 +2741,7 @@ pre-commit install --hook-type pre-push   # Hook runs on every push
 ### Available Hooks
 
 | Hook ID | When it runs | What it does |
-|---------|-------------|--------------|
+|---------|--------------|--------------|
 | `pipewarden-secrets` | Every `git commit` | Scans ALL files for secrets. Fast (~0.1s). |
 | `pipewarden-diff` | Every `git push` | Scans only files changed vs `origin/main`. Very fast. |
 | `pipewarden-full` | Manual only | Full pipeline: install, lint, test, build, scan. |

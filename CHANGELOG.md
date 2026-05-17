@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.1] — 2026-05-17
+
+### Fixed
+
+- **Docstrings added to all source and test files** — every public function in `cli.py`, `stages.py`, `secrets.py`, `config.py`, `runner.py`, `reporters.py`, `detect.py`, and all seven test modules now carries a one-line docstring describing what it does or verifies. This improves IDE hover-help and `help()` output without any behavioural change.
+
+- **Pytest fixture shadow warning eliminated** — `test_stages.py` fixtures `cfg` and `recorder` are now registered via `@pytest.fixture(name=...)` with underscore-prefixed function names (`_cfg`, `_recorder`). This is the canonical pytest pattern for avoiding the "Redefining name from outer scope" IDE warning without suppression comments.
+
+- **README `tool_version` example corrected** — the JSON output example showed `"tool_version": "1.0.0"`; updated to reflect the current version.
+
+- **README Docker section updated** — added a callout noting that the official image uses `python:3.12-alpine`, eliminating 2 high CVEs present in the Debian slim base.
+
+- **README table alignment corrected** — separator rows in the "Who Should Use It?", "What ruff catches", and "Available Hooks" tables now match their header column widths.
+
+---
+
 ## [1.3.0] — 2026-05-17
 
 ### Added
