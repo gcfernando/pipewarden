@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(python *)",
-      "Bash(pipewarden --validate)",
-      "Bash(pipewarden --dry-run --no-color)"
-    ]
-  }
-}
