@@ -107,7 +107,7 @@ def test_bad_config_returns_config_error(tmp_path: Path,
 
 def test_invoked_as_module(tmp_path: Path) -> None:
     """python -m pipewarden should be a working entry point that exits 0 on an empty directory."""
-    result = subprocess.run(  # noqa: S603
+    result = subprocess.run(
         [sys.executable, "-m", "pipewarden", "--root", str(tmp_path), "--no-color"],
         capture_output=True, text=True, encoding="utf-8", timeout=30, check=False,
     )

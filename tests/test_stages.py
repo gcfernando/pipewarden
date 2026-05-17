@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 import pytest
 
+from conftest import CallRecorder
 from pipewarden.config import PipelineConfig
 from pipewarden.detect import Detection
 from pipewarden.stages import (
@@ -28,9 +29,6 @@ from pipewarden.stages import (
     run_vulns,
 )
 from pipewarden.types import Status, StepResult
-
-# CallRecorder, cfg fixture, and recorder fixture live in conftest.py.
-from conftest import CallRecorder
 
 
 def _patch_stage(module_attr: str, rec: CallRecorder) -> Any:
